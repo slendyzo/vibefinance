@@ -194,6 +194,23 @@ High-end, minimalist expense tracking app with "Survival vs Lifestyle" cost anal
   - Shows difference and percentage change
   - Responsive container with tooltip
 
+### 14. Recurring Templates
+- **Files:**
+  - `src/app/api/recurring-templates/route.ts` - GET, POST
+  - `src/app/api/recurring-templates/[id]/route.ts` - GET, PUT, DELETE
+  - `src/app/api/recurring-templates/generate/route.ts` - Generate expenses for month
+  - `src/app/dashboard/recurring/page.tsx` - Templates management UI
+- **Features:**
+  - Create templates for recurring expenses (rent, subscriptions, utilities)
+  - Set expense type (SURVIVAL_FIXED, SURVIVAL_VARIABLE, LIFESTYLE, PROJECT)
+  - Fixed or variable amount support
+  - Day of month configuration
+  - Category assignment
+  - Active/inactive toggle
+  - Generate expenses for any month with duplicate prevention
+  - Summary cards showing active templates and monthly total
+  - Track last generated date and expense count
+
 ---
 
 ## Environment Variables (.env)
@@ -235,6 +252,10 @@ vibefinance/
 │   │   │   ├── keyword-mappings/
 │   │   │   │   ├── route.ts
 │   │   │   │   └── [id]/route.ts
+│   │   │   ├── recurring-templates/
+│   │   │   │   ├── route.ts
+│   │   │   │   ├── [id]/route.ts
+│   │   │   │   └── generate/route.ts
 │   │   │   └── import/
 │   │   │       ├── route.ts
 │   │   │       └── preview/route.ts
@@ -250,6 +271,7 @@ vibefinance/
 │   │   │   ├── categories/page.tsx       ← Categories CRUD
 │   │   │   ├── accounts/page.tsx         ← Bank accounts CRUD
 │   │   │   ├── mappings/page.tsx         ← Keyword mappings CRUD
+│   │   │   ├── recurring/page.tsx        ← Recurring templates
 │   │   │   └── import/page.tsx           ← 3-step import wizard
 │   │   ├── globals.css
 │   │   ├── layout.tsx
@@ -300,7 +322,7 @@ vibefinance/
 11. [x] **Projects CRUD** - Manage projects
 12. [x] **Keyword Mappings CRUD** - Auto-categorization rules
 13. [x] **Expenses CRUD (Full)** - Edit, pagination, monthly grouping
-14. [ ] **Recurring Templates** - Auto-generate survival expenses monthly
+14. [x] **Recurring Templates** - Auto-generate survival expenses monthly
 15. [ ] **Docker** - Self-hosted community version
 
 ---
