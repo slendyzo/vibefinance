@@ -433,6 +433,7 @@ export default function ExpensesPage() {
         }}
         categories={categories}
         bankAccounts={bankAccounts}
+        projects={projects}
       />
 
       {/* Edit Expense Modal */}

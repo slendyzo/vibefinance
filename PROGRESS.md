@@ -211,6 +211,31 @@ High-end, minimalist expense tracking app with "Survival vs Lifestyle" cost anal
   - Summary cards showing active templates and monthly total
   - Track last generated date and expense count
 
+### 15. Tag-Based Expense Entry (Simplified UX)
+- **Files:**
+  - `src/components/add-expense-modal.tsx` - Redesigned with tag selector
+  - `src/components/edit-expense-modal.tsx` - Added tag selector for retroactive tagging
+- **Features:**
+  - Tags = Projects concept for simpler UX
+  - Date defaults to today with optional date picker
+  - Tag selection as pill buttons
+  - Inline "New" button to create tags (auto-creates projects)
+  - "No tag" option for regular lifestyle expenses
+  - Type automatically set to PROJECT when tag selected, LIFESTYLE otherwise
+  - Retroactive tagging via edit modal
+  - Category and bank account in collapsible "More options"
+
+### 16. Settings Page
+- **Files:**
+  - `src/app/api/expenses/bulk/route.ts` - DELETE all expenses endpoint
+  - `src/app/dashboard/settings/page.tsx` - Settings management UI
+- **Features:**
+  - Account overview with stats (total expenses, amount, categories, projects)
+  - Currency preference selector (EUR, USD, GBP, BRL)
+  - Danger zone with "Delete All Expenses" option
+  - Confirmation required (type "DELETE ALL" to confirm)
+  - Coming soon placeholders for: Family/Group workspaces, Profile picture, Password change, Privacy options, Data export
+
 ---
 
 ## Environment Variables (.env)
@@ -239,7 +264,8 @@ vibefinance/
 │   │   │   │   └── register/route.ts
 │   │   │   ├── expenses/
 │   │   │   │   ├── route.ts              ← GET, POST
-│   │   │   │   └── [id]/route.ts         ← GET, PUT, DELETE
+│   │   │   │   ├── [id]/route.ts         ← GET, PUT, DELETE
+│   │   │   │   └── bulk/route.ts         ← DELETE all expenses
 │   │   │   ├── categories/
 │   │   │   │   ├── route.ts
 │   │   │   │   └── [id]/route.ts
@@ -272,6 +298,7 @@ vibefinance/
 │   │   │   ├── accounts/page.tsx         ← Bank accounts CRUD
 │   │   │   ├── mappings/page.tsx         ← Keyword mappings CRUD
 │   │   │   ├── recurring/page.tsx        ← Recurring templates
+│   │   │   ├── settings/page.tsx         ← Settings & account management
 │   │   │   └── import/page.tsx           ← 3-step import wizard
 │   │   ├── globals.css
 │   │   ├── layout.tsx
@@ -283,7 +310,8 @@ vibefinance/
 │   │   │   ├── progress.tsx              ← Shadcn progress
 │   │   │   ├── living-gauge.tsx          ← Survival budget gauge
 │   │   │   └── burn-chart.tsx            ← Monthly comparison chart
-│   │   ├── add-expense-modal.tsx
+│   │   ├── add-expense-modal.tsx         ← Tag-based expense entry
+│   │   ├── edit-expense-modal.tsx        ← Edit with tag selector
 │   │   └── sidebar.tsx
 │   ├── lib/
 │   │   ├── auth.ts
@@ -323,7 +351,11 @@ vibefinance/
 12. [x] **Keyword Mappings CRUD** - Auto-categorization rules
 13. [x] **Expenses CRUD (Full)** - Edit, pagination, monthly grouping
 14. [x] **Recurring Templates** - Auto-generate survival expenses monthly
-15. [ ] **Docker** - Self-hosted community version
+15. [x] **Tag-Based UX** - Simplified expense entry with tag/project selector
+16. [x] **Settings Page** - Account settings with delete all expenses option
+17. [ ] **Docker** - Self-hosted community version
+18. [ ] **Family/Group Workspaces** - Share expenses with family members
+19. [ ] **Data Export** - Download expenses as CSV/Excel
 
 ---
 

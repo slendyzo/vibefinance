@@ -13,11 +13,17 @@ type BankAccount = {
   name: string;
 };
 
+type Project = {
+  id: string;
+  name: string;
+};
+
 type AddExpenseModalProps = {
   isOpen: boolean;
   onClose: () => void;
   categories?: Category[];
   bankAccounts?: BankAccount[];
+  projects?: Project[];
 };
 
 export default function AddExpenseModal({
@@ -25,24 +31,32 @@ export default function AddExpenseModal({
   onClose,
   categories = [],
   bankAccounts = [],
+  projects = [],
 }: AddExpenseModalProps) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Quick-add mode
-  const [quickAdd, setQuickAdd] = useState("");
-
-  // Manual mode
-  const [isManualMode, setIsManualMode] = useState(false);
+  // Form state
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
-  const [type, setType] = useState<"LIFESTYLE" | "SURVIVAL_FIXED" | "SURVIVAL_VARIABLE" | "PROJECT">("LIFESTYLE");
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [categoryId, setCategoryId] = useState("");
   const [bankAccountId, setBankAccountId] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+
+  // Project/Tag state
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [showNewTagInput, setShowNewTagInput] = useState(false);
+  const [newTagName, setNewTagName] = useState("");
+  const [localProjects, setLocalProjects] = useState<Project[]>(projects);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Update local projects when props change
+  useEffect(() => {
+    setLocalProjects(projects);
+  }, [projects]);
 
   // Focus input when modal opens
   useEffect(() => {
@@ -54,17 +68,40 @@ export default function AddExpenseModal({
   // Reset form when modal closes
   useEffect(() => {
     if (!isOpen) {
-      setQuickAdd("");
       setName("");
       setAmount("");
-      setType("LIFESTYLE");
+      setDate(new Date().toISOString().split("T")[0]);
+      setShowDatePicker(false);
       setCategoryId("");
       setBankAccountId("");
-      setDate(new Date().toISOString().split("T")[0]);
+      setSelectedProjectId("");
+      setShowNewTagInput(false);
+      setNewTagName("");
       setError("");
-      setIsManualMode(false);
     }
   }, [isOpen]);
+
+  const handleCreateTag = async () => {
+    if (!newTagName.trim()) return;
+
+    try {
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newTagName.trim() }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setLocalProjects([...localProjects, data.project]);
+        setSelectedProjectId(data.project.id);
+        setShowNewTagInput(false);
+        setNewTagName("");
+      }
+    } catch (err) {
+      console.error("Failed to create tag:", err);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,14 +109,21 @@ export default function AddExpenseModal({
     setError("");
 
     try {
-      const body = isManualMode
-        ? { name, amount: parseFloat(amount), type, categoryId, bankAccountId, date }
-        : { quickAdd };
+      // Determine type based on project selection
+      const type = selectedProjectId ? "PROJECT" : "LIFESTYLE";
 
       const response = await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          name,
+          amount: parseFloat(amount),
+          type,
+          categoryId: categoryId || undefined,
+          bankAccountId: bankAccountId || undefined,
+          projectId: selectedProjectId || undefined,
+          date,
+        }),
       });
 
       if (!response.ok) {
@@ -95,6 +139,8 @@ export default function AddExpenseModal({
       setIsLoading(false);
     }
   };
+
+  const isToday = date === new Date().toISOString().split("T")[0];
 
   if (!isOpen) return null;
 
@@ -124,152 +170,212 @@ export default function AddExpenseModal({
         </div>
 
         {/* Body */}
-        <form onSubmit={handleSubmit} className="p-6">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-600 text-sm">
+            <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">
               {error}
             </div>
           )}
 
-          {!isManualMode ? (
-            /* Quick-add mode */
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Quick Add
-                </label>
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={quickAdd}
-                  onChange={(e) => setQuickAdd(e.target.value)}
-                  placeholder='e.g., "mcd 12.50" or "uber 8€ millennium"'
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0070f3] focus:border-transparent text-lg"
-                />
-                <p className="mt-2 text-xs text-slate-500">
-                  Format: name amount [bank account]
-                </p>
-              </div>
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              What did you buy?
+            </label>
+            <input
+              ref={inputRef}
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g., Groceries, Coffee, Netflix"
+              required
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0070f3] focus:border-transparent"
+            />
+          </div>
 
+          {/* Amount */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              How much?
+            </label>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">€</span>
+              <input
+                type="number"
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                required
+                className="w-full rounded-lg border border-slate-300 bg-white pl-8 pr-4 py-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0070f3] focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          {/* Date - defaults to today, expandable */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-medium text-slate-700">Date</label>
               <button
                 type="button"
-                onClick={() => setIsManualMode(true)}
+                onClick={() => setShowDatePicker(!showDatePicker)}
                 className="text-sm text-[#0070f3] hover:underline"
               >
-                Switch to manual entry →
+                {isToday ? "Today" : new Date(date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                {!showDatePicker && " (change)"}
               </button>
             </div>
-          ) : (
-            /* Manual mode */
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Description
-                  </label>
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
-                  />
-                </div>
+            {showDatePicker && (
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
+              />
+            )}
+          </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Amount (€)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    required
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
-                  />
-                </div>
+          {/* Project Tags */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Tag (optional)
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {/* No tag option */}
+              <button
+                type="button"
+                onClick={() => setSelectedProjectId("")}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                  !selectedProjectId
+                    ? "bg-slate-800 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                No tag
+              </button>
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Date
-                  </label>
-                  <input
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
-                  />
-                </div>
+              {/* Existing project tags */}
+              {localProjects.map((project) => (
+                <button
+                  key={project.id}
+                  type="button"
+                  onClick={() => setSelectedProjectId(project.id)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                    selectedProjectId === project.id
+                      ? "bg-amber-500 text-white"
+                      : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                  }`}
+                >
+                  {project.name}
+                </button>
+              ))}
 
+              {/* Add new tag button */}
+              {!showNewTagInput && (
+                <button
+                  type="button"
+                  onClick={() => setShowNewTagInput(true)}
+                  className="px-3 py-1.5 rounded-full text-sm font-medium bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center gap-1"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  New
+                </button>
+              )}
+            </div>
+
+            {/* New tag input */}
+            {showNewTagInput && (
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  value={newTagName}
+                  onChange={(e) => setNewTagName(e.target.value)}
+                  placeholder="Tag name (e.g., Casa, Wedding)"
+                  className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleCreateTag();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={handleCreateTag}
+                  disabled={!newTagName.trim()}
+                  className="px-3 py-2 rounded-lg bg-[#0070f3] text-white text-sm font-medium hover:bg-[#0060df] disabled:opacity-50"
+                >
+                  Add
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNewTagInput(false);
+                    setNewTagName("");
+                  }}
+                  className="px-3 py-2 rounded-lg text-slate-500 hover:text-slate-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {selectedProjectId && (
+              <p className="mt-2 text-xs text-amber-600">
+                This expense will be tagged to the project
+              </p>
+            )}
+          </div>
+
+          {/* Optional: Category & Bank (collapsible) */}
+          <details className="group">
+            <summary className="text-sm text-slate-500 cursor-pointer hover:text-slate-700">
+              More options
+            </summary>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Category
+                </label>
+                <select
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
+                >
+                  <option value="">Auto</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {bankAccounts.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Type
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Bank Account
                   </label>
                   <select
-                    value={type}
-                    onChange={(e) => setType(e.target.value as typeof type)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
+                    value={bankAccountId}
+                    onChange={(e) => setBankAccountId(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
                   >
-                    <option value="LIFESTYLE">Lifestyle</option>
-                    <option value="SURVIVAL_FIXED">Living (Fixed)</option>
-                    <option value="SURVIVAL_VARIABLE">Living (Variable)</option>
-                    <option value="PROJECT">Project</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Category
-                  </label>
-                  <select
-                    value={categoryId}
-                    onChange={(e) => setCategoryId(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
-                  >
-                    <option value="">Auto-detect</option>
-                    {categories.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.name}
+                    <option value="">None</option>
+                    {bankAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.name}
                       </option>
                     ))}
                   </select>
                 </div>
-
-                {bankAccounts.length > 0 && (
-                  <div className="col-span-2">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                      Bank Account
-                    </label>
-                    <select
-                      value={bankAccountId}
-                      onChange={(e) => setBankAccountId(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
-                    >
-                      <option value="">None</option>
-                      {bankAccounts.map((acc) => (
-                        <option key={acc.id} value={acc.id}>
-                          {acc.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsManualMode(false)}
-                className="text-sm text-[#0070f3] hover:underline"
-              >
-                ← Switch to quick add
-              </button>
+              )}
             </div>
-          )}
+          </details>
 
           {/* Footer */}
-          <div className="mt-6 flex gap-3">
+          <div className="pt-2 flex gap-3">
             <button
               type="button"
               onClick={onClose}
@@ -279,7 +385,7 @@ export default function AddExpenseModal({
             </button>
             <button
               type="submit"
-              disabled={isLoading || (!isManualMode && !quickAdd) || (isManualMode && (!name || !amount))}
+              disabled={isLoading || !name || !amount}
               className="flex-1 rounded-lg bg-[#0070f3] px-4 py-2.5 text-white font-medium hover:bg-[#0060df] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? "Adding..." : "Add Expense"}
