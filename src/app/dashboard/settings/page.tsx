@@ -1,25 +1,56 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-
-type UserProfile = {
-  name: string;
-  email: string;
-};
 
 type Stats = {
   totalExpenses: number;
   totalAmount: number;
   totalCategories: number;
   totalProjects: number;
+  totalIncomes: number;
+  totalIncomeAmount: number;
 };
 
+type Workspace = {
+  id: string;
+  name: string;
+  monthlyBudget: number | null;
+  defaultCurrency: string;
+};
+
+type RecurringIncome = {
+  id: string;
+  name: string;
+  amount: number;
+  type: string;
+  dayOfMonth: number | null;
+};
+
+const CURRENCIES = [
+  { code: "EUR", symbol: "€", name: "Euro" },
+  { code: "USD", symbol: "$", name: "US Dollar" },
+  { code: "GBP", symbol: "£", name: "British Pound" },
+  { code: "BRL", symbol: "R$", name: "Brazilian Real" },
+];
+
 export default function SettingsPage() {
-  const router = useRouter();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [recurringIncomes, setRecurringIncomes] = useState<RecurringIncome[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Budget form
+  const [monthlyBudget, setMonthlyBudget] = useState("");
+  const [currency, setCurrency] = useState("EUR");
+
+  // Salary form
+  const [showSalaryModal, setShowSalaryModal] = useState(false);
+  const [salaryName, setSalaryName] = useState("Salary");
+  const [salaryAmount, setSalaryAmount] = useState("");
+  const [salaryDay, setSalaryDay] = useState("1");
+  const [editingSalaryId, setEditingSalaryId] = useState<string | null>(null);
 
   // Delete all expenses state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -28,15 +59,6 @@ export default function SettingsPage() {
   const [deleteError, setDeleteError] = useState("");
   const [deleteSuccess, setDeleteSuccess] = useState("");
 
-  // Currency state
-  const [currency, setCurrency] = useState("EUR");
-  const [currencies] = useState([
-    { code: "EUR", symbol: "€", name: "Euro" },
-    { code: "USD", symbol: "$", name: "US Dollar" },
-    { code: "GBP", symbol: "£", name: "British Pound" },
-    { code: "BRL", symbol: "R$", name: "Brazilian Real" },
-  ]);
-
   useEffect(() => {
     fetchData();
   }, []);
@@ -44,7 +66,16 @@ export default function SettingsPage() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      // Fetch expenses to get stats
+      // Fetch workspace settings
+      const workspaceRes = await fetch("/api/workspace");
+      if (workspaceRes.ok) {
+        const data = await workspaceRes.json();
+        setWorkspace(data.workspace);
+        setMonthlyBudget(data.workspace.monthlyBudget?.toString() || "");
+        setCurrency(data.workspace.defaultCurrency || "EUR");
+      }
+
+      // Fetch expenses stats
       const expensesRes = await fetch("/api/expenses?limit=10000");
       if (expensesRes.ok) {
         const data = await expensesRes.json();
@@ -56,6 +87,8 @@ export default function SettingsPage() {
           ),
           totalCategories: 0,
           totalProjects: 0,
+          totalIncomes: 0,
+          totalIncomeAmount: 0,
         });
       }
 
@@ -76,11 +109,118 @@ export default function SettingsPage() {
           prev ? { ...prev, totalProjects: data.projects?.length || 0 } : prev
         );
       }
+
+      // Fetch incomes
+      const incomesRes = await fetch("/api/incomes");
+      if (incomesRes.ok) {
+        const data = await incomesRes.json();
+        setStats((prev) =>
+          prev
+            ? {
+                ...prev,
+                totalIncomes: data.count || 0,
+                totalIncomeAmount: data.total || 0,
+              }
+            : prev
+        );
+        // Get recurring incomes (salary type)
+        const recurring = data.incomes?.filter(
+          (i: { isRecurring: boolean; type: string }) => i.isRecurring && i.type === "SALARY"
+        ) || [];
+        setRecurringIncomes(recurring);
+      }
     } catch (error) {
       console.error("Failed to fetch data:", error);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSaveBudget = async () => {
+    setIsSaving(true);
+    setSaveMessage(null);
+
+    try {
+      const response = await fetch("/api/workspace", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          monthlyBudget,
+          defaultCurrency: currency,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setWorkspace(data.workspace);
+        setSaveMessage({ type: "success", text: "Budget settings saved!" });
+        setTimeout(() => setSaveMessage(null), 3000);
+      } else {
+        throw new Error("Failed to save");
+      }
+    } catch {
+      setSaveMessage({ type: "error", text: "Failed to save settings" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveSalary = async () => {
+    if (!salaryAmount) return;
+
+    setIsSaving(true);
+    try {
+      const method = editingSalaryId ? "PUT" : "POST";
+      const url = editingSalaryId
+        ? `/api/incomes/${editingSalaryId}`
+        : "/api/incomes";
+
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: salaryName || "Salary",
+          amount: salaryAmount,
+          type: "SALARY",
+          isRecurring: true,
+          interval: "MONTHLY",
+          dayOfMonth: salaryDay,
+          date: new Date().toISOString(),
+        }),
+      });
+
+      if (response.ok) {
+        setShowSalaryModal(false);
+        setSalaryName("Salary");
+        setSalaryAmount("");
+        setSalaryDay("1");
+        setEditingSalaryId(null);
+        fetchData();
+      }
+    } catch (error) {
+      console.error("Failed to save salary:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteSalary = async (id: string) => {
+    try {
+      const response = await fetch(`/api/incomes/${id}`, { method: "DELETE" });
+      if (response.ok) {
+        fetchData();
+      }
+    } catch (error) {
+      console.error("Failed to delete salary:", error);
+    }
+  };
+
+  const openEditSalary = (income: RecurringIncome) => {
+    setEditingSalaryId(income.id);
+    setSalaryName(income.name);
+    setSalaryAmount(income.amount.toString());
+    setSalaryDay(income.dayOfMonth?.toString() || "1");
+    setShowSalaryModal(true);
   };
 
   const handleDeleteAllExpenses = async () => {
@@ -109,12 +249,16 @@ export default function SettingsPage() {
       setDeleteSuccess(`Successfully deleted ${data.deleted} expenses`);
       setShowDeleteConfirm(false);
       setDeleteConfirmText("");
-      fetchData(); // Refresh stats
+      fetchData();
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setIsDeleting(false);
     }
+  };
+
+  const getCurrencySymbol = (code: string) => {
+    return CURRENCIES.find((c) => c.code === code)?.symbol || "€";
   };
 
   return (
@@ -123,7 +267,7 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
         <p className="text-slate-500 text-sm mt-1">
-          Manage your account and preferences
+          Manage your budget, income, and preferences
         </p>
       </div>
 
@@ -140,13 +284,15 @@ export default function SettingsPage() {
             </div>
             <div className="bg-slate-50 rounded-lg p-4">
               <div className="text-2xl font-bold text-slate-900">
-                €{stats.totalAmount.toFixed(2)}
+                {getCurrencySymbol(currency)}{stats.totalAmount.toFixed(2)}
               </div>
               <div className="text-sm text-slate-500">Total Spent</div>
             </div>
             <div className="bg-slate-50 rounded-lg p-4">
-              <div className="text-2xl font-bold text-slate-900">{stats.totalCategories}</div>
-              <div className="text-sm text-slate-500">Categories</div>
+              <div className="text-2xl font-bold text-green-600">
+                {getCurrencySymbol(currency)}{stats.totalIncomeAmount.toFixed(2)}
+              </div>
+              <div className="text-sm text-slate-500">Total Income</div>
             </div>
             <div className="bg-slate-50 rounded-lg p-4">
               <div className="text-2xl font-bold text-slate-900">{stats.totalProjects}</div>
@@ -156,22 +302,48 @@ export default function SettingsPage() {
         ) : null}
       </div>
 
-      {/* Preferences */}
+      {/* Budget Settings */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
-        <h2 className="text-lg font-semibold text-slate-900 mb-4">Preferences</h2>
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">Budget & Currency</h2>
         <div className="space-y-4">
+          {/* Monthly Budget */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Monthly Budget
+              </label>
+              <p className="text-xs text-slate-500">
+                Set your target monthly spending limit
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-lg text-slate-500">{getCurrencySymbol(currency)}</span>
+              <input
+                type="number"
+                value={monthlyBudget}
+                onChange={(e) => setMonthlyBudget(e.target.value)}
+                placeholder="0.00"
+                className="w-32 rounded-lg border border-slate-300 px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
+              />
+            </div>
+          </div>
+
           {/* Currency */}
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-medium text-slate-900">Currency</div>
-              <div className="text-sm text-slate-500">Choose your default currency</div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Default Currency
+              </label>
+              <p className="text-xs text-slate-500">
+                Used for displaying totals and new entries
+              </p>
             </div>
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
               className="rounded-lg border border-slate-300 px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
             >
-              {currencies.map((c) => (
+              {CURRENCIES.map((c) => (
                 <option key={c.code} value={c.code}>
                   {c.symbol} {c.name}
                 </option>
@@ -179,54 +351,120 @@ export default function SettingsPage() {
             </select>
           </div>
 
-          {/* Theme (placeholder) */}
-          <div className="flex items-center justify-between opacity-50">
-            <div>
-              <div className="font-medium text-slate-900">Color Theme</div>
-              <div className="text-sm text-slate-500">Light mode (more themes coming soon)</div>
+          {saveMessage && (
+            <div
+              className={`p-3 rounded-lg text-sm ${
+                saveMessage.type === "success"
+                  ? "bg-green-50 text-green-700"
+                  : "bg-red-50 text-red-700"
+              }`}
+            >
+              {saveMessage.text}
             </div>
-            <div className="flex gap-2">
-              <button className="w-8 h-8 rounded-full bg-white border-2 border-[#0070f3]" />
-              <button className="w-8 h-8 rounded-full bg-slate-800 opacity-30" disabled />
-            </div>
-          </div>
+          )}
+
+          <button
+            onClick={handleSaveBudget}
+            disabled={isSaving}
+            className="px-4 py-2 bg-[#0070f3] text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors"
+          >
+            {isSaving ? "Saving..." : "Save Budget Settings"}
+          </button>
         </div>
       </div>
 
-      {/* Coming Soon Features */}
+      {/* Recurring Income (Salary) */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
-        <h2 className="text-lg font-semibold text-slate-900 mb-4">Coming Soon</h2>
-        <div className="space-y-3 text-slate-500 text-sm">
-          <div className="flex items-center gap-3">
-            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
-            <span>Family/Group workspaces - Share expenses with family members</span>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Recurring Income</h2>
+            <p className="text-sm text-slate-500">Set up your salary or regular income</p>
           </div>
-          <div className="flex items-center gap-3">
-            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          <button
+            onClick={() => {
+              setEditingSalaryId(null);
+              setSalaryName("Salary");
+              setSalaryAmount("");
+              setSalaryDay("1");
+              setShowSalaryModal(true);
+            }}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            <span>Profile picture - Customize your account appearance</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+            Add Income
+          </button>
+        </div>
+
+        {recurringIncomes.length === 0 ? (
+          <div className="text-center py-8 text-slate-500">
+            <svg className="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span>Change email & password - Update your credentials</span>
+            <p>No recurring income set up</p>
+            <p className="text-xs mt-1">Add your salary to track income vs expenses</p>
           </div>
-          <div className="flex items-center gap-3">
-            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        ) : (
+          <div className="space-y-3">
+            {recurringIncomes.map((income) => (
+              <div
+                key={income.id}
+                className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-100"
+              >
+                <div>
+                  <div className="font-medium text-slate-900">{income.name}</div>
+                  <div className="text-sm text-slate-500">
+                    {income.dayOfMonth ? `Day ${income.dayOfMonth} of each month` : "Monthly"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="text-xl font-bold text-green-600">
+                    {getCurrencySymbol(currency)}{Number(income.amount).toFixed(2)}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => openEditSalary(income)}
+                      className="p-2 text-slate-400 hover:text-slate-600 hover:bg-white rounded-lg"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSalary(income.id)}
+                      className="p-2 text-slate-400 hover:text-red-500 hover:bg-white rounded-lg"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Extra Incomes Link */}
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Extra Incomes</h2>
+            <p className="text-sm text-slate-500">
+              Track one-time income like sales, gifts, refunds, and more
+            </p>
+          </div>
+          <a
+            href="/dashboard/incomes"
+            className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
+          >
+            Manage Incomes
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
-            <span>Privacy options - Control your data visibility</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            <span>Export data - Download your expenses as CSV/Excel</span>
-          </div>
+          </a>
         </div>
       </div>
 
@@ -240,7 +478,6 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Delete All Expenses */}
         <div className="flex items-center justify-between p-4 bg-red-50 rounded-lg">
           <div>
             <div className="font-medium text-slate-900">Delete All Expenses</div>
@@ -256,6 +493,85 @@ export default function SettingsPage() {
           </button>
         </div>
       </div>
+
+      {/* Salary Modal */}
+      {showSalaryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowSalaryModal(false)}
+          />
+          <div className="relative w-full max-w-md mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 bg-green-50">
+              <h2 className="text-lg font-semibold text-green-700">
+                {editingSalaryId ? "Edit Recurring Income" : "Add Recurring Income"}
+              </h2>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={salaryName}
+                  onChange={(e) => setSalaryName(e.target.value)}
+                  placeholder="e.g., Salary, Freelance"
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Amount ({getCurrencySymbol(currency)})
+                </label>
+                <input
+                  type="number"
+                  value={salaryAmount}
+                  onChange={(e) => setSalaryAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Day of Month
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="31"
+                  value={salaryDay}
+                  onChange={(e) => setSalaryDay(e.target.value)}
+                  placeholder="1"
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  The day you typically receive this income
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowSalaryModal(false)}
+                  className="flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveSalary}
+                  disabled={isSaving || !salaryAmount}
+                  className="flex-1 rounded-lg bg-green-600 px-4 py-2.5 text-white font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
+                >
+                  {isSaving ? "Saving..." : editingSalaryId ? "Update" : "Add Income"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (

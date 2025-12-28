@@ -30,6 +30,9 @@ type Props = {
   bankAccounts: BankAccount[];
   initialMonth: number;
   initialYear: number;
+  monthlyBudget: number | null;
+  monthlyIncome: number;
+  expectedMonthlyIncome: number;
 };
 
 const MONTHS = [
@@ -49,6 +52,9 @@ export default function DashboardOverview({
   bankAccounts,
   initialMonth,
   initialYear,
+  monthlyBudget,
+  monthlyIncome,
+  expectedMonthlyIncome,
 }: Props) {
   const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -70,8 +76,8 @@ export default function DashboardOverview({
   // Previous month data for burn chart
   const [previousMonthExpenses, setPreviousMonthExpenses] = useState<Expense[]>([]);
 
-  // Living budget (user can set this later - default to 2000)
-  const [livingBudget] = useState(2000);
+  // Use monthly budget from settings, or expected income, or default to 2000
+  const livingBudget = monthlyBudget || expectedMonthlyIncome || 2000;
 
   // Fetch expenses when filters change
   useEffect(() => {
@@ -402,6 +408,47 @@ export default function DashboardOverview({
           )}
         </div>
       </div>
+
+      {/* Income & Balance Summary */}
+      {viewMode === "month" && (expectedMonthlyIncome > 0 || monthlyIncome > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-5 rounded-xl border border-green-200">
+            <p className="text-sm text-green-700 mb-1">Expected Income</p>
+            <p className="text-2xl font-bold text-green-600">€{expectedMonthlyIncome.toFixed(2)}</p>
+            <p className="text-xs text-green-600/70 mt-1">Recurring salary/income</p>
+          </div>
+          <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-5 rounded-xl border border-green-200">
+            <p className="text-sm text-green-700 mb-1">Received This Month</p>
+            <p className="text-2xl font-bold text-green-600">€{monthlyIncome.toFixed(2)}</p>
+            <p className="text-xs text-green-600/70 mt-1">All income sources</p>
+          </div>
+          <div className={`p-5 rounded-xl border ${
+            (monthlyIncome || expectedMonthlyIncome) - stats.grandTotal >= 0
+              ? "bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200"
+              : "bg-gradient-to-br from-red-50 to-orange-50 border-red-200"
+          }`}>
+            <p className={`text-sm mb-1 ${
+              (monthlyIncome || expectedMonthlyIncome) - stats.grandTotal >= 0
+                ? "text-blue-700"
+                : "text-red-700"
+            }`}>Net Balance</p>
+            <p className={`text-2xl font-bold ${
+              (monthlyIncome || expectedMonthlyIncome) - stats.grandTotal >= 0
+                ? "text-blue-600"
+                : "text-red-600"
+            }`}>
+              €{((monthlyIncome || expectedMonthlyIncome) - stats.grandTotal).toFixed(2)}
+            </p>
+            <p className={`text-xs mt-1 ${
+              (monthlyIncome || expectedMonthlyIncome) - stats.grandTotal >= 0
+                ? "text-blue-600/70"
+                : "text-red-600/70"
+            }`}>
+              {(monthlyIncome || expectedMonthlyIncome) - stats.grandTotal >= 0 ? "Surplus" : "Deficit"} after all expenses
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">

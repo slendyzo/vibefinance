@@ -67,6 +67,27 @@ export default async function DashboardPage() {
     },
   });
 
+  // Get current month income
+  const monthlyIncomes = await prisma.income.findMany({
+    where: {
+      workspaceId: workspace.id,
+      date: {
+        gte: startOfMonth,
+        lte: endOfMonth,
+      },
+    },
+  });
+  const monthlyIncome = monthlyIncomes.reduce((sum, i) => sum + Number(i.amountEur), 0);
+
+  // Get recurring income (salary) for expected monthly income
+  const recurringIncomes = await prisma.income.findMany({
+    where: {
+      workspaceId: workspace.id,
+      isRecurring: true,
+    },
+  });
+  const expectedMonthlyIncome = recurringIncomes.reduce((sum, i) => sum + Number(i.amountEur), 0);
+
   return (
     <DashboardOverview
       workspaceId={workspace.id}
@@ -86,6 +107,9 @@ export default async function DashboardPage() {
       bankAccounts={bankAccounts.map((b) => ({ id: b.id, name: b.name }))}
       initialMonth={now.getMonth()}
       initialYear={now.getFullYear()}
+      monthlyBudget={workspace.monthlyBudget ? Number(workspace.monthlyBudget) : null}
+      monthlyIncome={monthlyIncome}
+      expectedMonthlyIncome={expectedMonthlyIncome}
     />
   );
 }
