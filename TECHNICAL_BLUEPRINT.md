@@ -1,4 +1,4 @@
-# VibeFinance: Technical Blueprint
+# Amigo: Technical Blueprint
 
 ## 1. Database Schema (Prisma)
 The schema must support multi-tenancy (Workspaces) and the specific "Survival" logic.

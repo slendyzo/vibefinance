@@ -42,7 +42,7 @@ export default function SignUpPage() {
     <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-white dark:bg-slate-950">
       <div className="w-full max-w-md">
         <h1 className="text-3xl font-bold text-center text-slate-900 dark:text-white mb-2">
-          VibeFinance
+          Amigo
         </h1>
         <p className="text-center text-slate-600 dark:text-slate-400 mb-8">
           Create your account

@@ -1,4 +1,4 @@
-// Flexible Importer for VibeFinance
+// Flexible Importer for Amigo
 // Handles various Excel/CSV formats with custom column mapping
 
 import ExcelJS from "exceljs";

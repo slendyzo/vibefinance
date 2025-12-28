@@ -1,4 +1,4 @@
-// VibeFinance Database Schema
+// Amigo Database Schema
 // Supports both PostgreSQL (SaaS) and SQLite (Self-hosted) via environment variables
 
 generator client {

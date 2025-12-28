@@ -85,7 +85,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="h-16 flex items-center px-6 border-b border-slate-200">
         <Link href="/dashboard" className="text-xl font-bold text-slate-900">
-          VibeFinance
+          Amigo
         </Link>
       </div>
 
@@ -117,7 +117,7 @@ export default function Sidebar() {
       {/* Footer */}
       <div className="p-4 border-t border-slate-200">
         <div className="text-xs text-slate-400">
-          VibeFinance v0.1.0
+          Amigo v0.1.0
         </div>
       </div>
     </aside>

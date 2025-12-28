@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# VibeFinance Production Dockerfile
+# Amigo Production Dockerfile
 # Optimized multi-stage build for Next.js 15 with Prisma
 
 # Stage 1: Dependencies

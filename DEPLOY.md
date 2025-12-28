@@ -1,6 +1,6 @@
-# VibeFinance Deployment Guide
+# Amigo Deployment Guide
 
-Complete guide to deploy VibeFinance on Proxmox with auto-deploy from GitHub.
+Complete guide to deploy Amigo on Proxmox with auto-deploy from GitHub.
 
 ---
 
@@ -20,7 +20,7 @@ Complete guide to deploy VibeFinance on Proxmox with auto-deploy from GitHub.
 1. Click **Create CT** button (top right)
 2. Fill in:
    - **CT ID**: Pick a number (e.g., `100`)
-   - **Hostname**: `vibefinance`
+   - **Hostname**: `amigo`
    - **Password**: Set a root password (save this!)
    - **SSH public key**: (optional, we'll set this up later)
 3. Click **Next**
@@ -91,14 +91,14 @@ docker compose version
 
 ---
 
-## Part 3: Clone and Configure VibeFinance
+## Part 3: Clone and Configure Amigo
 
 ### Step 3.1: Clone the Repository
 
 ```bash
 cd ~
-git clone https://github.com/slendyzo/vibefinance.git
-cd vibefinance
+git clone https://github.com/slendyzo/amigo.git
+cd amigo
 ```
 
 ### Step 3.2: Create Environment File
@@ -148,7 +148,7 @@ Press `Ctrl+C` to stop watching logs.
 # Check container status
 docker compose ps
 
-# Should show: vibefinance running, healthy
+# Should show: amigo running, healthy
 
 # Test the app
 curl http://localhost:3000/api/health
@@ -180,7 +180,7 @@ cat ~/.ssh/github_deploy
 
 ### Step 4.2: Add Secrets to GitHub
 
-1. Go to: `https://github.com/slendyzo/vibefinance/settings/secrets/actions`
+1. Go to: `https://github.com/slendyzo/amigo/settings/secrets/actions`
 2. Click **New repository secret** for each:
 
 | Name | Value |
@@ -201,7 +201,7 @@ git commit -m "Test auto-deploy"
 git push
 ```
 
-Then go to: `https://github.com/slendyzo/vibefinance/actions`
+Then go to: `https://github.com/slendyzo/amigo/actions`
 
 You should see a workflow running. Once it's green, your server has the latest code!
 
@@ -223,11 +223,11 @@ dpkg -i cloudflared.deb
 cloudflared tunnel login
 
 # Create tunnel
-cloudflared tunnel create vibefinance
+cloudflared tunnel create amigo
 
 # Configure tunnel
 cat > ~/.cloudflared/config.yml << EOF
-tunnel: vibefinance
+tunnel: amigo
 credentials-file: /root/.cloudflared/<TUNNEL_ID>.json
 
 ingress:
@@ -237,7 +237,7 @@ ingress:
 EOF
 
 # Route DNS
-cloudflared tunnel route dns vibefinance finance.yourdomain.com
+cloudflared tunnel route dns amigo finance.yourdomain.com
 
 # Run as service
 cloudflared service install
@@ -246,14 +246,14 @@ systemctl start cloudflared
 
 4. Update your `.env`:
 ```bash
-nano ~/vibefinance/.env
+nano ~/amigo/.env
 # Change AUTH_URL to:
 AUTH_URL="https://finance.yourdomain.com"
 ```
 
 5. Rebuild:
 ```bash
-cd ~/vibefinance
+cd ~/amigo
 docker compose down
 docker compose up -d --build
 ```
@@ -265,7 +265,7 @@ docker compose up -d --build
 apt install -y nginx certbot python3-certbot-nginx
 
 # Create Nginx config
-cat > /etc/nginx/sites-available/vibefinance << 'EOF'
+cat > /etc/nginx/sites-available/amigo << 'EOF'
 server {
     listen 80;
     server_name finance.yourdomain.com;
@@ -285,7 +285,7 @@ server {
 EOF
 
 # Enable site
-ln -s /etc/nginx/sites-available/vibefinance /etc/nginx/sites-enabled/
+ln -s /etc/nginx/sites-available/amigo /etc/nginx/sites-enabled/
 nginx -t
 systemctl reload nginx
 
@@ -299,14 +299,14 @@ certbot --nginx -d finance.yourdomain.com
 
 ### Check Status
 ```bash
-cd ~/vibefinance
+cd ~/amigo
 docker compose ps
 docker compose logs -f  # Follow logs (Ctrl+C to stop)
 ```
 
 ### Manual Update
 ```bash
-cd ~/vibefinance
+cd ~/amigo
 git pull
 docker compose down
 docker compose up -d --build
@@ -314,13 +314,13 @@ docker compose up -d --build
 
 ### Restart App
 ```bash
-cd ~/vibefinance
+cd ~/amigo
 docker compose restart
 ```
 
 ### View Resource Usage
 ```bash
-docker stats vibefinance
+docker stats amigo
 ```
 
 ### Clean Up Old Images
@@ -342,7 +342,7 @@ docker compose logs
 ### Database connection failed
 - Check your `DATABASE_URL` in `.env`
 - Make sure Neon database is active (it may sleep after inactivity)
-- Test connection: `docker compose exec vibefinance node -e "console.log('test')"`
+- Test connection: `docker compose exec amigo node -e "console.log('test')"`
 
 ### SSH deploy fails
 - Verify secrets are set correctly in GitHub

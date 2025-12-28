@@ -8,8 +8,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "VibeFinance",
-  description: "High-end, minimalist expense tracking",
+  title: "Amigo",
+  description: "Your friendly expense tracker",
 };
 
 export default function RootLayout({

@@ -1,4 +1,4 @@
-# VibeFinance Development Progress
+# Amigo Development Progress
 
 ## Project Overview
 High-end, minimalist expense tracking app with "Survival vs Lifestyle" cost analysis.
@@ -252,7 +252,7 @@ GOOGLE_CLIENT_SECRET="" # Optional
 ## File Structure
 
 ```
-vibefinance/
+amigo/
 ├── prisma/
 │   ├── schema.prisma
 │   └── migrations/

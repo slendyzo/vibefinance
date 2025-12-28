@@ -1,9 +1,9 @@
 services:
-  vibefinance:
+  amigo:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vibefinance
+    container_name: amigo
     restart: unless-stopped
     ports:
       - "3000:3000"

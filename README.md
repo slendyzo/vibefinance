@@ -1,6 +1,6 @@
-# VibeFinance
+# Amigo
 
-A modern personal finance management application built with Next.js 15, designed for fast expense tracking with smart categorization.
+Your friendly expense tracker - a modern personal finance app built with Next.js 15, designed for fast expense tracking with smart categorization.
 
 ![Version](https://img.shields.io/badge/version-0.1.0-blue)
 ![Next.js](https://img.shields.io/badge/Next.js-15-black)
@@ -55,8 +55,8 @@ A modern personal finance management application built with Next.js 15, designed
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/slendyzo/vibefinance.git
-   cd vibefinance
+   git clone https://github.com/slendyzo/amigo.git
+   cd amigo
    ```
 
 2. **Install dependencies**
@@ -92,7 +92,7 @@ A modern personal finance management application built with Next.js 15, designed
 ## Project Structure
 
 ```
-vibefinance/
+amigo/
 ├── src/
 │   ├── app/
 │   │   ├── api/              # API routes

@@ -1,4 +1,4 @@
-// Smart Parsing Pipeline for VibeFinance
+// Smart Parsing Pipeline for Amigo
 // Level 1: Local keyword mapping
 // Level 2: LLM (future - opt-in)
 

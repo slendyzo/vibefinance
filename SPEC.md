@@ -1,7 +1,7 @@
-# VibeFinance: Master Product Specification
+# Amigo: Master Product Specification
 
 ## 1. Project Vision & Identity
-**VibeFinance** is a high-end, minimalist expense tracking ecosystem designed to remove the friction of manual entry while providing deep insights into survival costs versus lifestyle spending.
+**Amigo** is a high-end, minimalist expense tracking ecosystem designed to remove the friction of manual entry while providing deep insights into survival costs versus lifestyle spending.
 
 - **Branding:** "Clean & Electric." Pure white backgrounds, high-contrast Slate-900 typography, and **Electric Blue (#0070f3)** for primary actions, gauges, and chart accents.
 - **Tone:** Professional, fast, and secure.
