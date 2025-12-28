@@ -79,12 +79,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const arrayBuffer = await file.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
     const workbook = new ExcelJS.Workbook();
 
     // Handle CSV vs Excel
     if (file.name.endsWith(".csv")) {
-      const csvContent = buffer.toString("utf-8");
+      const decoder = new TextDecoder("utf-8");
+      const csvContent = decoder.decode(uint8Array);
       const worksheet = workbook.addWorksheet("Sheet1");
       const lines = csvContent.trim().split("\n");
       const delimiter = lines[0].includes(";") ? ";" : ",";
@@ -97,7 +99,8 @@ export async function POST(request: Request) {
         });
       });
     } else {
-      await workbook.xlsx.load(buffer);
+      // @ts-expect-error ExcelJS types don't match Node 22 Buffer types
+      await workbook.xlsx.load(Buffer.from(arrayBuffer));
     }
 
     const sheets: SheetPreview[] = [];

@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { name, bankName, accountType, currency } = body;
+    const { name, currency } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -60,8 +60,6 @@ export async function POST(request: Request) {
       data: {
         workspaceId: workspace.id,
         name,
-        bankName: bankName || null,
-        accountType: accountType || "CHECKING",
         currency: currency || "EUR",
       },
     });

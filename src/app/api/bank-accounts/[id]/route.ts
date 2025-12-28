@@ -15,7 +15,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { name, bankName, accountType, currency } = body;
+    const { name, currency } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -42,8 +42,6 @@ export async function PUT(
       where: { id },
       data: {
         name,
-        bankName: bankName || null,
-        accountType: accountType || existing.accountType,
         currency: currency || existing.currency,
       },
     });

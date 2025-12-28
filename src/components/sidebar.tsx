@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 
 const navigation = [
   { name: "Overview", href: "/dashboard", icon: "home" },
@@ -13,7 +14,7 @@ const navigation = [
   { name: "Import", href: "/dashboard/import", icon: "upload" },
 ];
 
-const icons: Record<string, JSX.Element> = {
+const icons: Record<string, ReactNode> = {
   home: (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />

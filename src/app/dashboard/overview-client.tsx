@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import AddExpenseModal from "@/components/add-expense-modal";
+import { LivingGauge } from "@/components/ui/living-gauge";
+import { BurnChart } from "@/components/ui/burn-chart";
 
 type Expense = {
   id: string;
@@ -65,9 +67,18 @@ export default function DashboardOverview({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // Previous month data for burn chart
+  const [previousMonthExpenses, setPreviousMonthExpenses] = useState<Expense[]>([]);
+
+  // Living budget (user can set this later - default to 2000)
+  const [livingBudget] = useState(2000);
+
   // Fetch expenses when filters change
   useEffect(() => {
     fetchExpenses();
+    if (viewMode === "month") {
+      fetchPreviousMonthExpenses();
+    }
   }, [viewMode, selectedMonth, selectedYear, selectedQuarter, selectedProjectId]);
 
   const fetchExpenses = async () => {
@@ -134,6 +145,54 @@ export default function DashboardOverview({
       console.error("Failed to fetch expenses:", error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchPreviousMonthExpenses = async () => {
+    try {
+      // Calculate previous month
+      let prevMonth = selectedMonth - 1;
+      let prevYear = selectedYear;
+      if (prevMonth < 0) {
+        prevMonth = 11;
+        prevYear -= 1;
+      }
+
+      const startDate = new Date(prevYear, prevMonth, 1);
+      const endDate = new Date(prevYear, prevMonth + 1, 0, 23, 59, 59);
+
+      const params = new URLSearchParams({
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        limit: "500",
+      });
+
+      const response = await fetch(`/api/expenses?${params}`);
+      const data = await response.json();
+
+      if (data.expenses) {
+        setPreviousMonthExpenses(data.expenses.map((e: {
+          id: string;
+          name: string;
+          date: string;
+          type: string;
+          amountEur: number;
+          category?: { name: string } | null;
+          project?: { name: string; id: string } | null;
+          projectId?: string | null;
+        }) => ({
+          id: e.id,
+          name: e.name,
+          date: e.date,
+          type: e.type,
+          amountEur: Number(e.amountEur),
+          categoryName: e.category?.name || "Uncategorized",
+          projectName: e.project?.name || null,
+          projectId: e.projectId || null,
+        })));
+      }
+    } catch (error) {
+      console.error("Failed to fetch previous month expenses:", error);
     }
   };
 
@@ -375,6 +434,34 @@ export default function DashboardOverview({
           <p className="text-xs text-slate-400 mt-1">Including projects</p>
         </div>
       </div>
+
+      {/* Visualizations */}
+      {viewMode === "month" && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Living Gauge */}
+          <div className="bg-white rounded-xl border border-slate-200 p-6 flex items-center justify-center">
+            <LivingGauge
+              current={stats.living}
+              budget={livingBudget}
+              label="Living Budget"
+            />
+          </div>
+
+          {/* Burn Chart */}
+          <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-6">
+            <BurnChart
+              currentMonthExpenses={expenses
+                .filter((e) => !e.projectId)
+                .map((e) => ({ date: e.date, amountEur: e.amountEur }))}
+              previousMonthExpenses={previousMonthExpenses
+                .filter((e) => !e.projectId)
+                .map((e) => ({ date: e.date, amountEur: e.amountEur }))}
+              currentMonthLabel={`${MONTHS[selectedMonth]} ${selectedYear}`}
+              previousMonthLabel={`${MONTHS[selectedMonth === 0 ? 11 : selectedMonth - 1]} ${selectedMonth === 0 ? selectedYear - 1 : selectedYear}`}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Expenses List */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">

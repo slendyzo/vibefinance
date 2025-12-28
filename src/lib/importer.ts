@@ -226,6 +226,7 @@ export async function importExpensesFromExcel(
 
   try {
     const workbook = new ExcelJS.Workbook();
+    // @ts-expect-error ExcelJS types don't match Node 22 Buffer types
     await workbook.xlsx.load(buffer);
 
     console.log(`Processing ${workbook.worksheets.length} worksheets...`);

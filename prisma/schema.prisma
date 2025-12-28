@@ -313,14 +313,14 @@ model RecurringTemplate {
 model KeywordMapping {
   id          String  @id @default(cuid())
   workspaceId String?  // null = global/system mapping
-  categoryId  String
+  categoryId  String?
 
   keyword     String  // e.g., "mcd", "uber", "spotify"
-  merchantName String // Cleaned name: "McDonalds", "Uber", "Spotify"
+  expenseType String? // e.g., "SURVIVAL_FIXED", "LIFESTYLE"
   isSystem    Boolean @default(false)
 
   // Relations
-  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
