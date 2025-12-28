@@ -89,13 +89,13 @@ export default function ImportPage() {
         setStep("upload");
       } else {
         setPreview(data);
-        // Apply suggested mapping
+        // Apply suggested mapping - start with ALL sheets selected
         setMapping({
           dateColumn: data.suggestedMapping.dateColumn,
           nameColumn: data.suggestedMapping.nameColumn || 1,
           amountColumn: data.suggestedMapping.amountColumn || 2,
           headerRow: data.suggestedMapping.headerRow,
-          sheetsToImport: [],
+          sheetsToImport: data.sheets.map((s) => s.name), // Select all by default
           projectSheets: [],
         });
         setStep("mapping");
@@ -176,6 +176,56 @@ export default function ImportPage() {
       nameColumn: 1,
       amountColumn: 2,
       headerRow: 1,
+      sheetsToImport: [],
+      projectSheets: [],
+    });
+  };
+
+  // Toggle sheet selection
+  const toggleSheet = (sheetName: string) => {
+    if (mapping.sheetsToImport.includes(sheetName)) {
+      setMapping({
+        ...mapping,
+        sheetsToImport: mapping.sheetsToImport.filter((s) => s !== sheetName),
+        // Also remove from project sheets if deselected
+        projectSheets: mapping.projectSheets.filter((s) => s !== sheetName),
+      });
+    } else {
+      setMapping({
+        ...mapping,
+        sheetsToImport: [...mapping.sheetsToImport, sheetName],
+      });
+    }
+  };
+
+  // Toggle project sheet
+  const toggleProjectSheet = (sheetName: string) => {
+    if (mapping.projectSheets.includes(sheetName)) {
+      setMapping({
+        ...mapping,
+        projectSheets: mapping.projectSheets.filter((s) => s !== sheetName),
+      });
+    } else {
+      setMapping({
+        ...mapping,
+        projectSheets: [...mapping.projectSheets, sheetName],
+      });
+    }
+  };
+
+  // Select/deselect all sheets
+  const selectAllSheets = () => {
+    if (preview) {
+      setMapping({
+        ...mapping,
+        sheetsToImport: preview.sheets.map((s) => s.name),
+      });
+    }
+  };
+
+  const deselectAllSheets = () => {
+    setMapping({
+      ...mapping,
       sheetsToImport: [],
       projectSheets: [],
     });
@@ -373,87 +423,94 @@ export default function ImportPage() {
               {/* Sheet Selection */}
               {preview.sheets.length > 1 && (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Sheets to Import
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {preview.sheets.map((sheet) => (
-                      <label
-                        key={sheet.name}
-                        className={`
-                          px-3 py-2 rounded-lg border cursor-pointer transition-colors
-                          ${mapping.sheetsToImport.length === 0 || mapping.sheetsToImport.includes(sheet.name)
-                            ? "border-[#0070f3] bg-blue-50 text-[#0070f3]"
-                            : "border-slate-300 text-slate-600"
-                          }
-                        `}
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-slate-700">
+                      Sheets to Import
+                    </label>
+                    <div className="flex gap-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={selectAllSheets}
+                        className="text-[#0070f3] hover:underline"
                       >
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={mapping.sheetsToImport.length === 0 || mapping.sheetsToImport.includes(sheet.name)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              // If unchecking from "all", set to just this one
-                              if (mapping.sheetsToImport.length === 0) {
-                                setMapping({ ...mapping, sheetsToImport: [sheet.name] });
-                              } else {
-                                setMapping({ ...mapping, sheetsToImport: [...mapping.sheetsToImport, sheet.name] });
-                              }
-                            } else {
-                              const filtered = mapping.sheetsToImport.filter((s) => s !== sheet.name);
-                              // If none selected, revert to "all"
-                              setMapping({ ...mapping, sheetsToImport: filtered.length === preview.sheets.length - 1 ? [] : filtered });
+                        Select all
+                      </button>
+                      <span className="text-slate-300">|</span>
+                      <button
+                        type="button"
+                        onClick={deselectAllSheets}
+                        className="text-slate-500 hover:underline"
+                      >
+                        Deselect all
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {preview.sheets.map((sheet) => {
+                      const isSelected = mapping.sheetsToImport.includes(sheet.name);
+                      return (
+                        <button
+                          key={sheet.name}
+                          type="button"
+                          onClick={() => toggleSheet(sheet.name)}
+                          className={`
+                            px-3 py-2 rounded-lg border transition-colors
+                            ${isSelected
+                              ? "border-[#0070f3] bg-blue-50 text-[#0070f3]"
+                              : "border-slate-300 text-slate-400 bg-slate-50"
                             }
-                          }}
-                        />
-                        {sheet.name} ({sheet.rowCount} rows)
-                      </label>
-                    ))}
+                          `}
+                        >
+                          {sheet.name} ({sheet.rowCount} rows)
+                        </button>
+                      );
+                    })}
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
-                    {mapping.sheetsToImport.length === 0 ? "All sheets selected" : `${mapping.sheetsToImport.length} sheet(s) selected`}
+                    {mapping.sheetsToImport.length === 0
+                      ? "No sheets selected"
+                      : `${mapping.sheetsToImport.length} of ${preview.sheets.length} sheet(s) selected`}
                   </p>
                 </div>
               )}
 
-              {/* Project Sheets */}
-              {preview.sheets.length > 1 && (
+              {/* Project Sheets - only show sheets that are selected for import */}
+              {preview.sheets.length > 1 && mapping.sheetsToImport.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">
                     Project Sheets <span className="text-slate-400">(optional)</span>
                   </label>
                   <p className="text-xs text-slate-500 mb-2">
-                    Select sheets that contain project expenses (e.g., home renovation, specific goals)
+                    Mark sheets as project expenses. These will be tagged with the sheet name as the project.
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    {preview.sheets.map((sheet) => (
-                      <label
-                        key={sheet.name}
-                        className={`
-                          px-3 py-2 rounded-lg border cursor-pointer transition-colors
-                          ${mapping.projectSheets.includes(sheet.name)
-                            ? "border-purple-500 bg-purple-50 text-purple-600"
-                            : "border-slate-300 text-slate-600"
-                          }
-                        `}
-                      >
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={mapping.projectSheets.includes(sheet.name)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setMapping({ ...mapping, projectSheets: [...mapping.projectSheets, sheet.name] });
-                            } else {
-                              setMapping({ ...mapping, projectSheets: mapping.projectSheets.filter((s) => s !== sheet.name) });
-                            }
-                          }}
-                        />
-                        {sheet.name}
-                      </label>
-                    ))}
+                    {preview.sheets
+                      .filter((sheet) => mapping.sheetsToImport.includes(sheet.name))
+                      .map((sheet) => {
+                        const isProject = mapping.projectSheets.includes(sheet.name);
+                        return (
+                          <button
+                            key={sheet.name}
+                            type="button"
+                            onClick={() => toggleProjectSheet(sheet.name)}
+                            className={`
+                              px-3 py-2 rounded-lg border transition-colors
+                              ${isProject
+                                ? "border-amber-500 bg-amber-50 text-amber-600"
+                                : "border-slate-300 text-slate-600 hover:bg-slate-50"
+                              }
+                            `}
+                          >
+                            {sheet.name}
+                          </button>
+                        );
+                      })}
                   </div>
+                  {mapping.projectSheets.length > 0 && (
+                    <p className="text-xs text-amber-600 mt-2">
+                      {mapping.projectSheets.length} sheet(s) will be imported as project expenses
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -527,10 +584,12 @@ export default function ImportPage() {
               </button>
               <button
                 onClick={handleImport}
-                disabled={!mapping.nameColumn || !mapping.amountColumn}
+                disabled={!mapping.nameColumn || !mapping.amountColumn || mapping.sheetsToImport.length === 0}
                 className="flex-1 rounded-lg bg-[#0070f3] px-6 py-3 text-white font-medium hover:bg-[#0060df] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Import Expenses
+                {mapping.sheetsToImport.length === 0
+                  ? "Select at least one sheet"
+                  : `Import from ${mapping.sheetsToImport.length} sheet(s)`}
               </button>
             </div>
           </>
