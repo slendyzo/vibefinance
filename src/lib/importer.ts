@@ -465,38 +465,70 @@ export async function importExpensesFromExcel(
       },
     });
 
-    // Insert expenses in batches with link to import log
-    const expenseData = allParsedRows.map((row) => {
-      // Find project ID based on sheet name
-      let projectId: string | null = null;
-      if (row.type === ExpenseType.PROJECT) {
-        projectId = projectMap[row.sheetName.toLowerCase()] || null;
+    // Separate expenses into those with projects and those without
+    const projectExpenses: ParsedRow[] = [];
+    const regularExpenses: ParsedRow[] = [];
+
+    for (const row of allParsedRows) {
+      if (row.type === ExpenseType.PROJECT && projectMap[row.sheetName.toLowerCase()]) {
+        projectExpenses.push(row);
+      } else {
+        regularExpenses.push(row);
       }
+    }
 
-      return {
-        workspaceId,
-        categoryId: defaultCategory!.id,
-        projectId,
-        importLogId: importLog.id, // Link to import batch
-        name: row.name,
-        rawInput: row.rawInput,
-        type: row.type,
-        status: "PAID" as const,
-        amount: row.amount,
-        currency: "EUR",
-        amountEur: row.amount,
-        date: row.date!,
-      };
-    });
+    // Insert regular expenses in batch (no project relation)
+    const regularExpenseData = regularExpenses.map((row) => ({
+      workspaceId,
+      categoryId: defaultCategory!.id,
+      importLogId: importLog.id,
+      name: row.name,
+      rawInput: row.rawInput,
+      type: row.type,
+      status: "PAID" as const,
+      amount: row.amount,
+      currency: "EUR",
+      amountEur: row.amount,
+      date: row.date!,
+    }));
 
-    const result = await prisma.expense.createMany({
-      data: expenseData,
-    });
+    let totalCreated = 0;
+
+    if (regularExpenseData.length > 0) {
+      const regularResult = await prisma.expense.createMany({
+        data: regularExpenseData,
+      });
+      totalCreated += regularResult.count;
+    }
+
+    // Insert project expenses individually (to support many-to-many relation)
+    for (const row of projectExpenses) {
+      const projectId = projectMap[row.sheetName.toLowerCase()];
+      await prisma.expense.create({
+        data: {
+          workspaceId,
+          categoryId: defaultCategory!.id,
+          importLogId: importLog.id,
+          name: row.name,
+          rawInput: row.rawInput,
+          type: row.type,
+          status: "PAID",
+          amount: row.amount,
+          currency: "EUR",
+          amountEur: row.amount,
+          date: row.date!,
+          projects: {
+            connect: { id: projectId },
+          },
+        },
+      });
+      totalCreated++;
+    }
 
     // Update import log with actual success count
     await prisma.importLog.update({
       where: { id: importLog.id },
-      data: { rowsSuccess: result.count },
+      data: { rowsSuccess: totalCreated },
     });
 
     // Create recurring templates from candidates (skip if already exists)
@@ -529,7 +561,7 @@ export async function importExpensesFromExcel(
 
     return {
       success: true,
-      imported: result.count,
+      imported: totalCreated,
       failed: errors.length,
       errors: errors.slice(0, 20),
       stats,
