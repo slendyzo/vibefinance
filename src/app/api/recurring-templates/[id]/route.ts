@@ -78,11 +78,16 @@ export async function PUT(
       return NextResponse.json({ error: "Template not found" }, { status: 404 });
     }
 
+    // Parse dayOfMonth - empty string means null (no specific day)
+    const parsedDayOfMonth = dayOfMonth !== undefined
+      ? (dayOfMonth === "" || dayOfMonth === null ? null : parseInt(dayOfMonth))
+      : existing.dayOfMonth;
+
     // Recalculate next due if dayOfMonth changed
     let nextDue = existing.nextDue;
-    if (dayOfMonth && dayOfMonth !== existing.dayOfMonth) {
+    if (parsedDayOfMonth !== existing.dayOfMonth) {
       const now = new Date();
-      nextDue = new Date(now.getFullYear(), now.getMonth(), parseInt(dayOfMonth));
+      nextDue = new Date(now.getFullYear(), now.getMonth(), parsedDayOfMonth || 1);
       if (nextDue <= now) {
         nextDue.setMonth(nextDue.getMonth() + 1);
       }
@@ -96,7 +101,7 @@ export async function PUT(
         amount: amount !== undefined ? (amount ? parseFloat(amount) : null) : existing.amount,
         currency: currency || existing.currency,
         interval: interval ? (interval as RecurrenceInterval) : existing.interval,
-        dayOfMonth: dayOfMonth ? parseInt(dayOfMonth) : existing.dayOfMonth,
+        dayOfMonth: parsedDayOfMonth, // null = no specific day (monthly)
         categoryId: categoryId !== undefined ? (categoryId || null) : existing.categoryId,
         isActive: isActive !== undefined ? isActive : existing.isActive,
         nextDue,

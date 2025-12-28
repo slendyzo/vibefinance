@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { month, year, templateIds } = body;
+    const { month, year, templateIds, templateOverrides } = body;
 
     // Default to current month if not specified
     const targetMonth = month !== undefined ? month : new Date().getMonth();
@@ -25,6 +25,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No workspace found" }, { status: 400 });
     }
 
+    // Build a map of day overrides if provided
+    const dayOverrideMap = new Map<string, number | null>();
+    if (templateOverrides && Array.isArray(templateOverrides)) {
+      for (const override of templateOverrides) {
+        dayOverrideMap.set(override.id, override.dayOverride);
+      }
+    }
+
     // Get templates to generate from
     const whereClause: {
       workspaceId: string;
@@ -35,8 +43,11 @@ export async function POST(request: Request) {
       isActive: true,
     };
 
-    // If specific template IDs provided, only use those
-    if (templateIds && templateIds.length > 0) {
+    // If template overrides provided, only use those template IDs
+    if (templateOverrides && templateOverrides.length > 0) {
+      whereClause.id = { in: templateOverrides.map((o: { id: string }) => o.id) };
+    } else if (templateIds && templateIds.length > 0) {
+      // Legacy: If specific template IDs provided, only use those
       whereClause.id = { in: templateIds };
     }
 
@@ -99,8 +110,18 @@ export async function POST(request: Request) {
         continue;
       }
 
-      // Calculate the expense date (using dayOfMonth or 1st of month)
-      const dayOfMonth = template.dayOfMonth || 1;
+      // Calculate the expense date (using override, template dayOfMonth, or 1st of month)
+      let dayOfMonth = template.dayOfMonth || 1;
+
+      // Check if there's an override for this template
+      if (dayOverrideMap.has(template.id)) {
+        const override = dayOverrideMap.get(template.id);
+        if (override !== null && override !== undefined) {
+          dayOfMonth = override;
+        }
+        // If override is null/undefined, use template default (already set above)
+      }
+
       const lastDayOfMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
       const expenseDay = Math.min(dayOfMonth, lastDayOfMonth);
       const expenseDate = new Date(targetYear, targetMonth, expenseDay);

@@ -62,9 +62,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No workspace found" }, { status: 400 });
     }
 
-    // Calculate next due date
+    // Calculate next due date (use day 1 if no specific day set)
     const now = new Date();
-    let nextDue = new Date(now.getFullYear(), now.getMonth(), dayOfMonth || 1);
+    const parsedDayOfMonth = dayOfMonth ? parseInt(dayOfMonth) : null;
+    let nextDue = new Date(now.getFullYear(), now.getMonth(), parsedDayOfMonth || 1);
     if (nextDue <= now) {
       nextDue.setMonth(nextDue.getMonth() + 1);
     }
@@ -77,7 +78,7 @@ export async function POST(request: Request) {
         amount: amount ? parseFloat(amount) : null,
         currency: currency || "EUR",
         interval: (interval as RecurrenceInterval) || RecurrenceInterval.MONTHLY,
-        dayOfMonth: dayOfMonth ? parseInt(dayOfMonth) : 1,
+        dayOfMonth: parsedDayOfMonth, // null = no specific day (monthly)
         categoryId: categoryId || null,
         nextDue,
         isActive: true,

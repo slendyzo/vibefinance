@@ -48,6 +48,7 @@ export default function RecurringTemplatesPage() {
   const [generateYear, setGenerateYear] = useState(new Date().getFullYear());
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateResult, setGenerateResult] = useState<string | null>(null);
+  const [templateOverrides, setTemplateOverrides] = useState<Record<string, { selected: boolean; day: string }>>({});
 
   // Form state
   const [formData, setFormData] = useState({
@@ -55,7 +56,7 @@ export default function RecurringTemplatesPage() {
     type: "SURVIVAL_FIXED",
     amount: "",
     currency: "EUR",
-    dayOfMonth: "1",
+    dayOfMonth: "", // Empty = no specific date (just monthly)
     categoryId: "",
   });
 
@@ -106,7 +107,7 @@ export default function RecurringTemplatesPage() {
           type: "SURVIVAL_FIXED",
           amount: "",
           currency: "EUR",
-          dayOfMonth: "1",
+          dayOfMonth: "",
           categoryId: "",
         });
         setIsCreating(false);
@@ -175,12 +176,21 @@ export default function RecurringTemplatesPage() {
     setGenerateResult(null);
 
     try {
+      // Build template overrides for selected templates
+      const selectedTemplates = Object.entries(templateOverrides)
+        .filter(([, override]) => override.selected)
+        .map(([id, override]) => ({
+          id,
+          dayOverride: override.day ? parseInt(override.day) : null,
+        }));
+
       const response = await fetch("/api/recurring-templates/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           month: generateMonth,
           year: generateYear,
+          templateOverrides: selectedTemplates,
         }),
       });
 
@@ -201,7 +211,7 @@ export default function RecurringTemplatesPage() {
       type: template.type,
       amount: template.amount?.toString() || "",
       currency: template.currency,
-      dayOfMonth: template.dayOfMonth?.toString() || "1",
+      dayOfMonth: template.dayOfMonth?.toString() || "",
       categoryId: template.category?.id || "",
     });
     setEditingId(template.id);
@@ -214,7 +224,7 @@ export default function RecurringTemplatesPage() {
       type: "SURVIVAL_FIXED",
       amount: "",
       currency: "EUR",
-      dayOfMonth: "1",
+      dayOfMonth: "",
       categoryId: "",
     });
     setIsCreating(true);
@@ -263,7 +273,15 @@ export default function RecurringTemplatesPage() {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={() => setShowGenerateModal(true)}
+            onClick={() => {
+              // Initialize overrides with active templates
+              const overrides: Record<string, { selected: boolean; day: string }> = {};
+              templates.filter(t => t.isActive).forEach(t => {
+                overrides[t.id] = { selected: true, day: t.dayOfMonth?.toString() || "" };
+              });
+              setTemplateOverrides(overrides);
+              setShowGenerateModal(true);
+            }}
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -338,15 +356,19 @@ export default function RecurringTemplatesPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Day of Month</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Day of Month <span className="text-slate-400 font-normal">(optional)</span>
+              </label>
               <input
                 type="number"
                 min="1"
                 max="31"
                 value={formData.dayOfMonth}
                 onChange={(e) => setFormData({ ...formData, dayOfMonth: e.target.value })}
+                placeholder="Any"
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
+              <p className="text-xs text-slate-400 mt-1">Leave empty for monthly expenses without a specific day</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
@@ -433,6 +455,7 @@ export default function RecurringTemplatesPage() {
                         max="31"
                         value={formData.dayOfMonth}
                         onChange={(e) => setFormData({ ...formData, dayOfMonth: e.target.value })}
+                        placeholder="Any"
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
                       />
                       <select
@@ -488,7 +511,7 @@ export default function RecurringTemplatesPage() {
                           )}
                         </div>
                         <div className="text-sm text-slate-500 mt-0.5">
-                          Day {template.dayOfMonth || 1} •
+                          {template.dayOfMonth ? `Day ${template.dayOfMonth}` : 'Monthly'} •
                           {template.amount ? ` €${Number(template.amount).toFixed(2)}` : ' Variable amount'} •
                           {template._count.expenses} expenses generated
                         </div>
@@ -545,13 +568,13 @@ export default function RecurringTemplatesPage() {
       {/* Generate Modal */}
       {showGenerateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
             <h2 className="text-xl font-bold text-slate-900 mb-4">Generate Expenses</h2>
             <p className="text-sm text-slate-500 mb-4">
-              Create expense entries from all active templates for a specific month.
+              Create expense entries from active templates for a specific month. You can customize the day for each expense.
             </p>
 
-            <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Month</label>
                 <select
@@ -575,6 +598,90 @@ export default function RecurringTemplatesPage() {
               </div>
             </div>
 
+            {/* Template Selection with Day Override */}
+            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-lg mb-4">
+              <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-700">
+                  Templates ({Object.values(templateOverrides).filter(o => o.selected).length} selected)
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      const allSelected = Object.fromEntries(
+                        Object.entries(templateOverrides).map(([id, o]) => [id, { ...o, selected: true }])
+                      );
+                      setTemplateOverrides(allSelected);
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    onClick={() => {
+                      const noneSelected = Object.fromEntries(
+                        Object.entries(templateOverrides).map(([id, o]) => [id, { ...o, selected: false }])
+                      );
+                      setTemplateOverrides(noneSelected);
+                    }}
+                    className="text-xs text-slate-500 hover:text-slate-700"
+                  >
+                    Deselect all
+                  </button>
+                </div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {templates.filter(t => t.isActive).map((template) => {
+                  const override = templateOverrides[template.id] || { selected: true, day: "" };
+                  return (
+                    <div key={template.id} className={`p-3 flex items-center gap-3 ${!override.selected ? 'opacity-50' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={override.selected}
+                        onChange={(e) => setTemplateOverrides({
+                          ...templateOverrides,
+                          [template.id]: { ...override, selected: e.target.checked }
+                        })}
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-slate-900 truncate">{template.name}</span>
+                          <span className={`px-2 py-0.5 text-xs rounded-full ${getTypeStyle(template.type)}`}>
+                            {getTypeLabel(template.type)}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {template.amount ? `€${Number(template.amount).toFixed(2)}` : 'Variable'}
+                          {template.dayOfMonth && ` • Default: Day ${template.dayOfMonth}`}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500">Day:</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="31"
+                          value={override.day}
+                          onChange={(e) => setTemplateOverrides({
+                            ...templateOverrides,
+                            [template.id]: { ...override, day: e.target.value }
+                          })}
+                          placeholder="1st"
+                          disabled={!override.selected}
+                          className="w-16 px-2 py-1 text-sm border border-slate-200 rounded focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {templates.filter(t => t.isActive).length === 0 && (
+                <div className="p-8 text-center text-slate-500 text-sm">
+                  No active templates. Enable some templates first.
+                </div>
+              )}
+            </div>
+
             {generateResult && (
               <div className={`p-3 rounded-lg mb-4 ${
                 generateResult.includes('Failed') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'
@@ -586,7 +693,7 @@ export default function RecurringTemplatesPage() {
             <div className="flex gap-3">
               <button
                 onClick={handleGenerate}
-                disabled={isGenerating}
+                disabled={isGenerating || Object.values(templateOverrides).filter(o => o.selected).length === 0}
                 className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isGenerating ? (
@@ -598,7 +705,7 @@ export default function RecurringTemplatesPage() {
                     Generating...
                   </>
                 ) : (
-                  'Generate Expenses'
+                  `Generate ${Object.values(templateOverrides).filter(o => o.selected).length} Expense(s)`
                 )}
               </button>
               <button
