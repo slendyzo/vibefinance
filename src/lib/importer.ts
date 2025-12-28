@@ -251,7 +251,7 @@ export async function importExpensesFromExcel(
       processedSheets.push(sheetName);
 
       let rowsProcessed = 0;
-      const startRow = columnMapping.headerRow + 1;
+      let lastValidDate: Date | null = null; // Track last seen date for inheritance
 
       worksheet.eachRow((row, rowNumber) => {
         // Skip header rows
@@ -274,11 +274,24 @@ export async function importExpensesFromExcel(
         }
 
         const dateValue = dateCell ? getCellValue(dateCell) : null;
-        const parsedDate = parseExcelDate(dateValue);
-        const hasDate = parsedDate !== null;
+        let parsedDate = parseExcelDate(dateValue);
+
+        // DATE INHERITANCE: If no date in this row, use the last valid date
+        if (parsedDate) {
+          lastValidDate = parsedDate; // Update the last valid date
+        } else if (lastValidDate) {
+          parsedDate = lastValidDate; // Inherit from previous row
+        }
+
+        // hasDate now reflects whether THIS row had a date OR inherited one
+        // For type determination, we check if the ORIGINAL cell had a date
+        const originalHadDate = dateValue !== null && dateValue !== undefined && dateValue !== "";
 
         // Determine expense type
-        const type = determineExpenseType(rawName, hasDate, isProjectSheet);
+        // For project sheets: always PROJECT
+        // For non-project sheets with explicit dates or inherited dates from dated rows: LIFESTYLE
+        // For survival items (no date context): SURVIVAL_FIXED/VARIABLE
+        const type = determineExpenseType(rawName, originalHadDate || (lastValidDate !== null && !isProjectSheet), isProjectSheet);
 
         // Update stats
         if (type === ExpenseType.SURVIVAL_FIXED) stats.survivalFixed++;
@@ -286,7 +299,7 @@ export async function importExpensesFromExcel(
         else if (type === ExpenseType.LIFESTYLE) stats.lifestyle++;
         else if (type === ExpenseType.PROJECT) stats.project++;
 
-        // Use parsed date, or sheet date for survival items, or today
+        // Use parsed date (which may be inherited), or sheet date, or today
         let expenseDate = parsedDate;
         if (!expenseDate && sheetDate) {
           expenseDate = sheetDate;
@@ -335,35 +348,46 @@ export async function importExpensesFromExcel(
       });
     }
 
-    // Get or create project for project-tagged expenses
-    let project = null;
-    if (stats.project > 0 && columnMapping.projectSheets.length > 0) {
-      const projectName = columnMapping.projectSheets[0];
-      project = await prisma.project.findFirst({
-        where: { workspaceId, name: { equals: projectName, mode: "insensitive" } },
+    // Get or create projects for project-tagged expenses (one per project sheet)
+    const projectMap: Record<string, string> = {}; // sheetName -> projectId
+    for (const projectSheetName of columnMapping.projectSheets) {
+      let project = await prisma.project.findFirst({
+        where: { workspaceId, name: { equals: projectSheetName, mode: "insensitive" } },
       });
 
       if (!project) {
         project = await prisma.project.create({
-          data: { workspaceId, name: projectName.charAt(0).toUpperCase() + projectName.slice(1) },
+          data: {
+            workspaceId,
+            name: projectSheetName.charAt(0).toUpperCase() + projectSheetName.slice(1).toLowerCase()
+          },
         });
       }
+      projectMap[projectSheetName.toLowerCase()] = project.id;
     }
 
     // Insert expenses in batches
-    const expenseData = allParsedRows.map((row) => ({
-      workspaceId,
-      categoryId: defaultCategory!.id,
-      projectId: row.type === ExpenseType.PROJECT ? project?.id || null : null,
-      name: row.name,
-      rawInput: row.rawInput,
-      type: row.type,
-      status: "PAID" as const,
-      amount: row.amount,
-      currency: "EUR",
-      amountEur: row.amount,
-      date: row.date!,
-    }));
+    const expenseData = allParsedRows.map((row) => {
+      // Find project ID based on sheet name
+      let projectId: string | null = null;
+      if (row.type === ExpenseType.PROJECT) {
+        projectId = projectMap[row.sheetName.toLowerCase()] || null;
+      }
+
+      return {
+        workspaceId,
+        categoryId: defaultCategory!.id,
+        projectId,
+        name: row.name,
+        rawInput: row.rawInput,
+        type: row.type,
+        status: "PAID" as const,
+        amount: row.amount,
+        currency: "EUR",
+        amountEur: row.amount,
+        date: row.date!,
+      };
+    });
 
     const result = await prisma.expense.createMany({
       data: expenseData,
