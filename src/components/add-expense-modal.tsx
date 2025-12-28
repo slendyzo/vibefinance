@@ -53,10 +53,14 @@ export default function AddExpenseModal({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Update local projects when props change
+  // Update local projects when props change (compare by content to avoid infinite loops)
   useEffect(() => {
-    setLocalProjects(projects);
-  }, [projects]);
+    const projectsJson = JSON.stringify(projects);
+    const localJson = JSON.stringify(localProjects);
+    if (projectsJson !== localJson) {
+      setLocalProjects(projects);
+    }
+  }, [projects, localProjects]);
 
   // Focus input when modal opens
   useEffect(() => {

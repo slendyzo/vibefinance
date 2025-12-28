@@ -29,6 +29,12 @@ export type ColumnMapping = {
   projectSheets: string[]; // Sheets to tag as PROJECT type
 };
 
+export type RecurringCandidate = {
+  name: string;
+  amount: number;
+  type: ExpenseType;
+};
+
 export type ImporterResult = {
   success: boolean;
   imported: number;
@@ -41,6 +47,8 @@ export type ImporterResult = {
     project: number;
   };
   sheets: string[];
+  recurringCandidates: RecurringCandidate[];
+  recurringTemplatesCreated: number;
 };
 
 export type ParsedRow = {
@@ -213,6 +221,7 @@ export async function importExpensesFromExcel(
     project: 0,
   };
   const processedSheets: string[] = [];
+  const recurringCandidates: RecurringCandidate[] = [];
 
   // Default mapping (legacy format)
   const columnMapping: ColumnMapping = mapping || {
@@ -252,6 +261,8 @@ export async function importExpensesFromExcel(
 
       let rowsProcessed = 0;
       let lastValidDate: Date | null = null; // Track last seen date for inheritance
+      let firstDateSeen = false; // Track if we've seen a date yet (rows before first date are recurring)
+      const sheetRecurringNames = new Set<string>(); // Track recurring candidates per sheet
 
       worksheet.eachRow((row, rowNumber) => {
         // Skip header rows
@@ -276,16 +287,36 @@ export async function importExpensesFromExcel(
         const dateValue = dateCell ? getCellValue(dateCell) : null;
         let parsedDate = parseExcelDate(dateValue);
 
-        // DATE INHERITANCE: If no date in this row, use the last valid date
-        if (parsedDate) {
-          lastValidDate = parsedDate; // Update the last valid date
-        } else if (lastValidDate) {
-          parsedDate = lastValidDate; // Inherit from previous row
-        }
-
         // hasDate now reflects whether THIS row had a date OR inherited one
         // For type determination, we check if the ORIGINAL cell had a date
         const originalHadDate = dateValue !== null && dateValue !== undefined && dateValue !== "";
+
+        // Track recurring candidates: expenses without dates that appear before any dated entries
+        // These are typically subscription/fixed costs listed at the top of the sheet
+        if (!originalHadDate && !firstDateSeen && !isProjectSheet) {
+          // This is a recurring candidate - expense without date at top of sheet
+          const normalizedName = rawName.toLowerCase().trim();
+          if (!sheetRecurringNames.has(normalizedName)) {
+            sheetRecurringNames.add(normalizedName);
+            const type = determineExpenseType(rawName, false, false);
+            // Only add SURVIVAL_FIXED and SURVIVAL_VARIABLE as recurring candidates
+            if (type === ExpenseType.SURVIVAL_FIXED || type === ExpenseType.SURVIVAL_VARIABLE) {
+              recurringCandidates.push({
+                name: rawName,
+                amount,
+                type,
+              });
+            }
+          }
+        }
+
+        // DATE INHERITANCE: If no date in this row, use the last valid date
+        if (parsedDate) {
+          lastValidDate = parsedDate; // Update the last valid date
+          firstDateSeen = true; // Mark that we've seen a date
+        } else if (lastValidDate) {
+          parsedDate = lastValidDate; // Inherit from previous row
+        }
 
         // Determine expense type
         // For project sheets: always PROJECT
@@ -334,7 +365,24 @@ export async function importExpensesFromExcel(
         errors: ["No valid expense rows found. Please check your column mapping."],
         stats,
         sheets: processedSheets,
+        recurringCandidates: [],
+        recurringTemplatesCreated: 0,
       };
+    }
+
+    // Deduplicate recurring candidates by normalized name
+    const uniqueRecurring = new Map<string, RecurringCandidate>();
+    for (const candidate of recurringCandidates) {
+      const key = candidate.name.toLowerCase().trim();
+      if (!uniqueRecurring.has(key)) {
+        uniqueRecurring.set(key, candidate);
+      }
+    }
+    const dedupedRecurring = Array.from(uniqueRecurring.values());
+
+    console.log(`\nFound ${dedupedRecurring.length} recurring expense candidates`);
+    for (const rc of dedupedRecurring) {
+      console.log(`  → ${rc.name}: €${rc.amount} (${rc.type})`);
     }
 
     // Get or create default category
@@ -406,6 +454,34 @@ export async function importExpensesFromExcel(
       },
     });
 
+    // Create recurring templates from candidates (skip if already exists)
+    let recurringTemplatesCreated = 0;
+    for (const candidate of dedupedRecurring) {
+      // Check if template already exists with similar name
+      const existing = await prisma.recurringTemplate.findFirst({
+        where: {
+          workspaceId,
+          name: { equals: candidate.name, mode: "insensitive" },
+        },
+      });
+
+      if (!existing) {
+        await prisma.recurringTemplate.create({
+          data: {
+            workspaceId,
+            name: candidate.name,
+            type: candidate.type,
+            amount: candidate.amount,
+            currency: "EUR",
+            interval: "MONTHLY",
+            isActive: true,
+          },
+        });
+        recurringTemplatesCreated++;
+        console.log(`  Created recurring template: ${candidate.name}`);
+      }
+    }
+
     return {
       success: true,
       imported: result.count,
@@ -413,6 +489,8 @@ export async function importExpensesFromExcel(
       errors: errors.slice(0, 20),
       stats,
       sheets: processedSheets,
+      recurringCandidates: dedupedRecurring,
+      recurringTemplatesCreated,
     };
   } catch (error) {
     console.error("Import error:", error);
@@ -425,6 +503,8 @@ export async function importExpensesFromExcel(
       errors,
       stats,
       sheets: processedSheets,
+      recurringCandidates: [],
+      recurringTemplatesCreated: 0,
     };
   }
 }

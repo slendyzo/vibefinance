@@ -61,10 +61,14 @@ export default function EditExpenseModal({
   const [newTagName, setNewTagName] = useState("");
   const [localProjects, setLocalProjects] = useState<Project[]>(projects);
 
-  // Update local projects when props change
+  // Update local projects when props change (compare by content to avoid infinite loops)
   useEffect(() => {
-    setLocalProjects(projects);
-  }, [projects]);
+    const projectsJson = JSON.stringify(projects);
+    const localJson = JSON.stringify(localProjects);
+    if (projectsJson !== localJson) {
+      setLocalProjects(projects);
+    }
+  }, [projects, localProjects]);
 
   // Reset form when expense changes
   useEffect(() => {

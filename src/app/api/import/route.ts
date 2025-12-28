@@ -80,6 +80,8 @@ export async function POST(request: Request) {
       stats: result.stats,
       errors: result.errors,
       sheets: result.sheets,
+      recurringCandidates: result.recurringCandidates,
+      recurringTemplatesCreated: result.recurringTemplatesCreated,
     });
   } catch (error) {
     console.error("Import error:", error);

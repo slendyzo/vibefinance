@@ -34,6 +34,14 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+const CURRENCIES = [
+  { value: "EUR", label: "EUR", symbol: "€" },
+  { value: "USD", label: "USD", symbol: "$" },
+  { value: "GBP", label: "GBP", symbol: "£" },
+  { value: "BRL", label: "BRL", symbol: "R$" },
+  { value: "PLN", label: "PLN", symbol: "zł" },
+];
+
 export default function IncomesPage() {
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -56,7 +64,9 @@ export default function IncomesPage() {
     description: "",
     type: "OTHER",
     amount: "",
+    currency: "EUR",
     date: new Date().toISOString().split("T")[0],
+    hasDate: true,
     bankAccountId: "",
   });
 
@@ -108,10 +118,21 @@ export default function IncomesPage() {
       const method = editingId ? "PUT" : "POST";
       const url = editingId ? `/api/incomes/${editingId}` : "/api/incomes";
 
+      // Build payload, only include date if hasDate is true
+      const payload = {
+        name: formData.name,
+        description: formData.description,
+        type: formData.type,
+        amount: formData.amount,
+        currency: formData.currency,
+        date: formData.hasDate ? formData.date : null,
+        bankAccountId: formData.bankAccountId,
+      };
+
       const response = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
@@ -145,7 +166,9 @@ export default function IncomesPage() {
       description: income.description || "",
       type: income.type,
       amount: income.amount.toString(),
+      currency: income.currency || "EUR",
       date: new Date(income.date).toISOString().split("T")[0],
+      hasDate: true, // Existing incomes always have a date
       bankAccountId: income.bankAccount?.id || "",
     });
     setShowModal(true);
@@ -158,7 +181,9 @@ export default function IncomesPage() {
       description: "",
       type: "OTHER",
       amount: "",
+      currency: "EUR",
       date: new Date().toISOString().split("T")[0],
+      hasDate: true,
       bankAccountId: "",
     });
     setShowModal(true);
@@ -172,7 +197,9 @@ export default function IncomesPage() {
       description: "",
       type: "OTHER",
       amount: "",
+      currency: "EUR",
       date: new Date().toISOString().split("T")[0],
+      hasDate: true,
       bankAccountId: "",
     });
   };
@@ -183,6 +210,10 @@ export default function IncomesPage() {
 
   const getTypeLabel = (type: string) => {
     return INCOME_TYPES.find((t) => t.value === type)?.label || type;
+  };
+
+  const getCurrencySymbol = (currency: string) => {
+    return CURRENCIES.find((c) => c.value === currency)?.symbol || "€";
   };
 
   const formatDate = (dateString: string) => {
@@ -297,7 +328,7 @@ export default function IncomesPage() {
 
                 <div className="text-right">
                   <div className="text-lg font-bold text-green-600">
-                    +€{Number(income.amount).toFixed(2)}
+                    +{getCurrencySymbol(income.currency)}{Number(income.amount).toFixed(2)}
                   </div>
                 </div>
 
@@ -371,28 +402,56 @@ export default function IncomesPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Amount (€)
+                    Amount
                   </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.amount}
-                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    placeholder="0.00"
-                    className="w-full rounded-lg border border-slate-300 px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-green-500"
-                  />
+                  <div className="flex gap-2">
+                    <select
+                      value={formData.currency}
+                      onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                      className="w-24 rounded-lg border border-slate-300 px-2 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    >
+                      {CURRENCIES.map((cur) => (
+                        <option key={cur.value} value={cur.value}>{cur.symbol} {cur.label}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.amount}
+                      onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                      placeholder="0.00"
+                      className="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Date
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.date}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-green-500"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-medium text-slate-700">
+                      Date
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-slate-500 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.hasDate}
+                        onChange={(e) => setFormData({ ...formData, hasDate: e.target.checked })}
+                        className="rounded border-slate-300 text-green-600 focus:ring-green-500"
+                      />
+                      Has specific date
+                    </label>
+                  </div>
+                  {formData.hasDate ? (
+                    <input
+                      type="date"
+                      value={formData.date}
+                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                      className="w-full rounded-lg border border-slate-300 px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  ) : (
+                    <div className="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-slate-400">
+                      No date (recurring/general)
+                    </div>
+                  )}
                 </div>
 
                 <div>

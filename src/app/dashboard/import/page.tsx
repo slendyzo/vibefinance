@@ -29,12 +29,20 @@ type ImportStats = {
   project: number;
 };
 
+type RecurringCandidate = {
+  name: string;
+  amount: number;
+  type: string;
+};
+
 type ImportResponse = {
   success: boolean;
   imported: number;
   stats: ImportStats;
   errors: string[];
   sheets?: string[];
+  recurringCandidates?: RecurringCandidate[];
+  recurringTemplatesCreated?: number;
 };
 
 type ColumnMapping = {
@@ -641,6 +649,41 @@ export default function ImportPage() {
                 <p className="text-2xl font-bold text-slate-900">{result.stats.project}</p>
               </div>
             </div>
+
+            {/* Recurring Templates Created */}
+            {result.recurringTemplatesCreated && result.recurringTemplatesCreated > 0 && (
+              <div className="p-4 rounded-lg bg-purple-50 border border-purple-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <p className="font-medium text-purple-700">
+                    {result.recurringTemplatesCreated} recurring template{result.recurringTemplatesCreated !== 1 ? 's' : ''} created!
+                  </p>
+                </div>
+                <p className="text-sm text-purple-600 mb-3">
+                  We detected expenses without dates at the top of your sheets (subscriptions, bills). These have been added as recurring templates.
+                </p>
+                {result.recurringCandidates && result.recurringCandidates.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {result.recurringCandidates.map((rc, i) => (
+                      <span
+                        key={i}
+                        className="px-2 py-1 rounded-full bg-purple-100 text-xs text-purple-700"
+                      >
+                        {rc.name} (€{rc.amount.toFixed(2)})
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <button
+                  onClick={() => router.push("/dashboard/recurring")}
+                  className="mt-3 text-sm text-purple-600 hover:text-purple-800 font-medium underline"
+                >
+                  View & manage recurring templates →
+                </button>
+              </div>
+            )}
 
             {/* Sheets processed */}
             {result.sheets && result.sheets.length > 0 && (

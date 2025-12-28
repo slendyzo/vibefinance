@@ -2,6 +2,22 @@
 
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
+import EditExpenseModal from "@/components/edit-expense-modal";
+
+type Category = {
+  id: string;
+  name: string;
+};
+
+type BankAccount = {
+  id: string;
+  name: string;
+};
+
+type ProjectItem = {
+  id: string;
+  name: string;
+};
 
 type Expense = {
   id: string;
@@ -9,9 +25,11 @@ type Expense = {
   amount: number;
   amountEur: number;
   currency: string;
-  type: string;
+  type: "SURVIVAL_FIXED" | "SURVIVAL_VARIABLE" | "LIFESTYLE" | "PROJECT";
   date: string;
   category: { id: string; name: string } | null;
+  bankAccount: { id: string; name: string } | null;
+  project: { id: string; name: string } | null;
 };
 
 type Project = {
@@ -37,9 +55,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [isLoading, setIsLoading] = useState(true);
   const [totalSpent, setTotalSpent] = useState(0);
 
+  // Edit modal state
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [projects, setProjects] = useState<ProjectItem[]>([]);
+
   useEffect(() => {
     fetchProject();
     fetchExpenses();
+    fetchCategories();
+    fetchBankAccounts();
+    fetchProjects();
   }, [id]);
 
   const fetchProject = async () => {
@@ -73,6 +101,47 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch("/api/categories");
+      if (response.ok) {
+        const data = await response.json();
+        setCategories(data.categories || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch categories:", error);
+    }
+  };
+
+  const fetchBankAccounts = async () => {
+    try {
+      const response = await fetch("/api/bank-accounts");
+      if (response.ok) {
+        const data = await response.json();
+        setBankAccounts(data.bankAccounts || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch bank accounts:", error);
+    }
+  };
+
+  const fetchProjects = async () => {
+    try {
+      const response = await fetch("/api/projects");
+      if (response.ok) {
+        const data = await response.json();
+        setProjects(data.projects || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch projects:", error);
+    }
+  };
+
+  const handleEditExpense = (expense: Expense) => {
+    setEditingExpense(expense);
+    setIsEditModalOpen(true);
   };
 
   const formatDate = (dateString: string) => {
@@ -232,7 +301,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   {monthData.expenses.map((expense) => (
                     <div
                       key={expense.id}
-                      className="px-6 py-3 flex items-center justify-between hover:bg-slate-50"
+                      className="px-6 py-3 flex items-center justify-between hover:bg-slate-50 group"
                     >
                       <div className="flex items-center gap-4">
                         <div className="w-10 text-xs text-slate-400">
@@ -252,15 +321,26 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                           </div>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-medium text-slate-900">
-                          €{Number(expense.amountEur).toFixed(2)}
-                        </p>
-                        {expense.currency !== "EUR" && (
-                          <p className="text-xs text-slate-400">
-                            {expense.currency} {Number(expense.amount).toFixed(2)}
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <p className="font-medium text-slate-900">
+                            €{Number(expense.amountEur).toFixed(2)}
                           </p>
-                        )}
+                          {expense.currency !== "EUR" && (
+                            <p className="text-xs text-slate-400">
+                              {expense.currency} {Number(expense.amount).toFixed(2)}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleEditExpense(expense)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Edit expense"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -270,6 +350,22 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           </div>
         )}
       </div>
+
+      {/* Edit Expense Modal */}
+      <EditExpenseModal
+        isOpen={isEditModalOpen}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditingExpense(null);
+        }}
+        expense={editingExpense}
+        categories={categories}
+        bankAccounts={bankAccounts}
+        projects={projects}
+        onSave={() => {
+          fetchExpenses();
+        }}
+      />
     </div>
   );
 }
