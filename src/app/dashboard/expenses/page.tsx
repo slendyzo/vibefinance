@@ -57,6 +57,8 @@ export default function ExpensesPage() {
   // Filters
   const [typeFilter, setTypeFilter] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"date" | "amount">("date");
+  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
 
   // Pagination
   const [page, setPage] = useState(0);
@@ -123,15 +125,31 @@ export default function ExpensesPage() {
     setDeleteId(null);
   };
 
-  // Filter and group expenses by month
-  const groupedExpenses = useMemo(() => {
+  // Sort and filter expenses
+  const sortedExpenses = useMemo(() => {
     const filtered = expenses.filter((e) =>
       searchQuery ? e.name.toLowerCase().includes(searchQuery.toLowerCase()) : true
     );
 
+    // Sort based on current sort settings
+    return [...filtered].sort((a, b) => {
+      if (sortBy === "date") {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return sortOrder === "desc" ? dateB - dateA : dateA - dateB;
+      } else {
+        const amountA = Number(a.amount);
+        const amountB = Number(b.amount);
+        return sortOrder === "desc" ? amountB - amountA : amountA - amountB;
+      }
+    });
+  }, [expenses, searchQuery, sortBy, sortOrder]);
+
+  // Group expenses by month (for grouped view)
+  const groupedExpenses = useMemo(() => {
     // Group by month-year
     const groups: Record<string, Expense[]> = {};
-    filtered.forEach((expense) => {
+    sortedExpenses.forEach((expense) => {
       const date = new Date(expense.date);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth()).padStart(2, "0")}`;
       if (!groups[monthKey]) {
@@ -140,21 +158,24 @@ export default function ExpensesPage() {
       groups[monthKey].push(expense);
     });
 
-    // Convert to array and sort by date (newest first)
+    // Convert to array and sort months
     const result: GroupedExpenses[] = Object.entries(groups)
-      .map(([monthKey, expenses]) => {
+      .map(([monthKey, monthExpenses]) => {
         const [year, month] = monthKey.split("-");
         return {
           monthKey,
           monthLabel: `${MONTHS[parseInt(month)]} ${year}`,
-          expenses: expenses.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-          total: expenses.reduce((sum, e) => sum + Number(e.amount), 0),
+          expenses: monthExpenses, // Already sorted from sortedExpenses
+          total: monthExpenses.reduce((sum, e) => sum + Number(e.amount), 0),
         };
       })
-      .sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+      .sort((a, b) => sortOrder === "desc"
+        ? b.monthKey.localeCompare(a.monthKey)
+        : a.monthKey.localeCompare(b.monthKey)
+      );
 
     return result;
-  }, [expenses, searchQuery]);
+  }, [sortedExpenses, sortOrder]);
 
   const typeColors: Record<string, string> = {
     SURVIVAL_FIXED: "bg-blue-100 text-blue-700",
@@ -219,6 +240,32 @@ export default function ExpensesPage() {
             <option value="LIFESTYLE">Lifestyle</option>
             <option value="PROJECT">Project</option>
           </select>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-500">Sort:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as "date" | "amount")}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
+            >
+              <option value="date">Date</option>
+              <option value="amount">Amount</option>
+            </select>
+            <button
+              onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
+              className="p-2 rounded-lg border border-slate-300 hover:bg-slate-50"
+              title={sortOrder === "desc" ? "Newest/Highest first" : "Oldest/Lowest first"}
+            >
+              {sortOrder === "desc" ? (
+                <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4" />
+                </svg>
+              )}
+            </button>
+          </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-500">Show:</span>
             <select
