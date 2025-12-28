@@ -1,0 +1,662 @@
+"use client";
+
+import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+
+type SheetPreview = {
+  name: string;
+  headers: { column: number; value: string }[];
+  sampleRows: Record<number, unknown>[];
+  rowCount: number;
+};
+
+type PreviewResponse = {
+  success: boolean;
+  sheets: SheetPreview[];
+  suggestedMapping: {
+    dateColumn: number | null;
+    nameColumn: number | null;
+    amountColumn: number | null;
+    headerRow: number;
+  };
+  error?: string;
+};
+
+type ImportStats = {
+  survivalFixed: number;
+  survivalVariable: number;
+  lifestyle: number;
+  project: number;
+};
+
+type ImportResponse = {
+  success: boolean;
+  imported: number;
+  stats: ImportStats;
+  errors: string[];
+  sheets?: string[];
+};
+
+type ColumnMapping = {
+  dateColumn: number | null;
+  nameColumn: number;
+  amountColumn: number;
+  headerRow: number;
+  sheetsToImport: string[];
+  projectSheets: string[];
+};
+
+type Step = "upload" | "mapping" | "importing" | "result";
+
+export default function ImportPage() {
+  const router = useRouter();
+  const [step, setStep] = useState<Step>("upload");
+  const [isDragging, setIsDragging] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<PreviewResponse | null>(null);
+  const [result, setResult] = useState<ImportResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Column mapping state
+  const [mapping, setMapping] = useState<ColumnMapping>({
+    dateColumn: null,
+    nameColumn: 1,
+    amountColumn: 2,
+    headerRow: 1,
+    sheetsToImport: [],
+    projectSheets: [],
+  });
+
+  const handleFile = useCallback(async (selectedFile: File) => {
+    setFile(selectedFile);
+    setIsLoading(true);
+    setError(null);
+
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+
+    try {
+      const response = await fetch("/api/import/preview", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data: PreviewResponse = await response.json();
+
+      if (!response.ok || !data.success) {
+        setError(data.error || "Failed to preview file");
+        setStep("upload");
+      } else {
+        setPreview(data);
+        // Apply suggested mapping
+        setMapping({
+          dateColumn: data.suggestedMapping.dateColumn,
+          nameColumn: data.suggestedMapping.nameColumn || 1,
+          amountColumn: data.suggestedMapping.amountColumn || 2,
+          headerRow: data.suggestedMapping.headerRow,
+          sheetsToImport: [],
+          projectSheets: [],
+        });
+        setStep("mapping");
+      }
+    } catch {
+      setError("Failed to preview file");
+      setStep("upload");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+
+      const droppedFile = e.dataTransfer.files[0];
+      if (droppedFile) {
+        handleFile(droppedFile);
+      }
+    },
+    [handleFile]
+  );
+
+  const handleFileInput = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const selectedFile = e.target.files?.[0];
+      if (selectedFile) {
+        handleFile(selectedFile);
+      }
+    },
+    [handleFile]
+  );
+
+  const handleImport = useCallback(async () => {
+    if (!file) return;
+
+    setStep("importing");
+    setIsLoading(true);
+    setError(null);
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("mapping", JSON.stringify(mapping));
+
+    try {
+      const response = await fetch("/api/import", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data: ImportResponse = await response.json();
+
+      if (!response.ok) {
+        setError(data.errors?.[0] || "Failed to import file");
+        setStep("mapping");
+      } else {
+        setResult(data);
+        setStep("result");
+      }
+    } catch {
+      setError("Failed to import file");
+      setStep("mapping");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [file, mapping]);
+
+  const resetImport = () => {
+    setStep("upload");
+    setFile(null);
+    setPreview(null);
+    setResult(null);
+    setError(null);
+    setMapping({
+      dateColumn: null,
+      nameColumn: 1,
+      amountColumn: 2,
+      headerRow: 1,
+      sheetsToImport: [],
+      projectSheets: [],
+    });
+  };
+
+  // Get all available columns from first sheet
+  const availableColumns = preview?.sheets[0]?.headers || [];
+
+  return (
+    <main className="min-h-screen bg-white">
+      {/* Header */}
+      <header className="border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => router.push("/dashboard")}
+                className="text-slate-600 hover:text-slate-900"
+              >
+                ← Back
+              </button>
+              <h1 className="text-xl font-bold text-slate-900">
+                Import Expenses
+              </h1>
+            </div>
+            {/* Step indicator */}
+            <div className="flex items-center gap-2 text-sm">
+              <span className={step === "upload" ? "text-[#0070f3] font-medium" : "text-slate-400"}>
+                1. Upload
+              </span>
+              <span className="text-slate-300">→</span>
+              <span className={step === "mapping" ? "text-[#0070f3] font-medium" : "text-slate-400"}>
+                2. Map Columns
+              </span>
+              <span className="text-slate-300">→</span>
+              <span className={step === "result" || step === "importing" ? "text-[#0070f3] font-medium" : "text-slate-400"}>
+                3. Import
+              </span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Error */}
+        {error && (
+          <div className="mb-6 p-4 rounded-lg bg-red-50 text-red-600">
+            {error}
+          </div>
+        )}
+
+        {/* Step 1: Upload */}
+        {step === "upload" && (
+          <>
+            <div className="mb-8">
+              <h2 className="text-lg font-semibold text-slate-900 mb-2">
+                Upload Your File
+              </h2>
+              <p className="text-slate-600">
+                Upload an Excel (.xlsx, .xls) or CSV file. We&apos;ll detect the structure
+                and help you map the columns.
+              </p>
+            </div>
+
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              className={`
+                relative border-2 border-dashed rounded-xl p-12 text-center transition-colors
+                ${isDragging ? "border-[#0070f3] bg-blue-50" : "border-slate-300"}
+                ${isLoading ? "opacity-50 pointer-events-none" : ""}
+              `}
+            >
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleFileInput}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                disabled={isLoading}
+              />
+
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                </div>
+
+                {isLoading ? (
+                  <p className="text-slate-600">Analyzing file...</p>
+                ) : (
+                  <>
+                    <p className="text-slate-900 font-medium">
+                      Drop your file here, or click to browse
+                    </p>
+                    <p className="text-sm text-slate-500">Supports .csv, .xlsx, .xls</p>
+                  </>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Step 2: Column Mapping */}
+        {step === "mapping" && preview && (
+          <>
+            <div className="mb-8">
+              <h2 className="text-lg font-semibold text-slate-900 mb-2">
+                Map Your Columns
+              </h2>
+              <p className="text-slate-600">
+                File: <strong>{file?.name}</strong> — {preview.sheets.length} sheet(s) found.
+                Tell us which columns contain your expense data.
+              </p>
+            </div>
+
+            {/* Mapping Form */}
+            <div className="space-y-6 mb-8">
+              {/* Header Row */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Header Row
+                </label>
+                <select
+                  value={mapping.headerRow}
+                  onChange={(e) => setMapping({ ...mapping, headerRow: parseInt(e.target.value) })}
+                  className="w-full px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900"
+                >
+                  {[1, 2, 3, 4, 5].map((row) => (
+                    <option key={row} value={row}>Row {row}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500 mt-1">Which row contains the column headers?</p>
+              </div>
+
+              {/* Column Selectors */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Date Column <span className="text-slate-400">(optional)</span>
+                  </label>
+                  <select
+                    value={mapping.dateColumn || ""}
+                    onChange={(e) => setMapping({ ...mapping, dateColumn: e.target.value ? parseInt(e.target.value) : null })}
+                    className="w-full px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900"
+                  >
+                    <option value="">No date column</option>
+                    {availableColumns.map((col) => (
+                      <option key={col.column} value={col.column}>
+                        Col {col.column}: {col.value}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Name/Description Column <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={mapping.nameColumn}
+                    onChange={(e) => setMapping({ ...mapping, nameColumn: parseInt(e.target.value) })}
+                    className="w-full px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900"
+                  >
+                    {availableColumns.map((col) => (
+                      <option key={col.column} value={col.column}>
+                        Col {col.column}: {col.value}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Amount Column <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={mapping.amountColumn}
+                    onChange={(e) => setMapping({ ...mapping, amountColumn: parseInt(e.target.value) })}
+                    className="w-full px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900"
+                  >
+                    {availableColumns.map((col) => (
+                      <option key={col.column} value={col.column}>
+                        Col {col.column}: {col.value}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Sheet Selection */}
+              {preview.sheets.length > 1 && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Sheets to Import
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {preview.sheets.map((sheet) => (
+                      <label
+                        key={sheet.name}
+                        className={`
+                          px-3 py-2 rounded-lg border cursor-pointer transition-colors
+                          ${mapping.sheetsToImport.length === 0 || mapping.sheetsToImport.includes(sheet.name)
+                            ? "border-[#0070f3] bg-blue-50 text-[#0070f3]"
+                            : "border-slate-300 text-slate-600"
+                          }
+                        `}
+                      >
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={mapping.sheetsToImport.length === 0 || mapping.sheetsToImport.includes(sheet.name)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              // If unchecking from "all", set to just this one
+                              if (mapping.sheetsToImport.length === 0) {
+                                setMapping({ ...mapping, sheetsToImport: [sheet.name] });
+                              } else {
+                                setMapping({ ...mapping, sheetsToImport: [...mapping.sheetsToImport, sheet.name] });
+                              }
+                            } else {
+                              const filtered = mapping.sheetsToImport.filter((s) => s !== sheet.name);
+                              // If none selected, revert to "all"
+                              setMapping({ ...mapping, sheetsToImport: filtered.length === preview.sheets.length - 1 ? [] : filtered });
+                            }
+                          }}
+                        />
+                        {sheet.name} ({sheet.rowCount} rows)
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {mapping.sheetsToImport.length === 0 ? "All sheets selected" : `${mapping.sheetsToImport.length} sheet(s) selected`}
+                  </p>
+                </div>
+              )}
+
+              {/* Project Sheets */}
+              {preview.sheets.length > 1 && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Project Sheets <span className="text-slate-400">(optional)</span>
+                  </label>
+                  <p className="text-xs text-slate-500 mb-2">
+                    Select sheets that contain project expenses (e.g., home renovation, specific goals)
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {preview.sheets.map((sheet) => (
+                      <label
+                        key={sheet.name}
+                        className={`
+                          px-3 py-2 rounded-lg border cursor-pointer transition-colors
+                          ${mapping.projectSheets.includes(sheet.name)
+                            ? "border-purple-500 bg-purple-50 text-purple-600"
+                            : "border-slate-300 text-slate-600"
+                          }
+                        `}
+                      >
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={mapping.projectSheets.includes(sheet.name)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setMapping({ ...mapping, projectSheets: [...mapping.projectSheets, sheet.name] });
+                            } else {
+                              setMapping({ ...mapping, projectSheets: mapping.projectSheets.filter((s) => s !== sheet.name) });
+                            }
+                          }}
+                        />
+                        {sheet.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Preview Table */}
+            <div className="mb-8">
+              <h3 className="text-sm font-medium text-slate-700 mb-3">
+                Data Preview (first sheet)
+              </h3>
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      {availableColumns.map((col) => (
+                        <th
+                          key={col.column}
+                          className={`px-4 py-3 text-left font-medium ${
+                            col.column === mapping.dateColumn
+                              ? "text-blue-600 bg-blue-50"
+                              : col.column === mapping.nameColumn
+                              ? "text-green-600 bg-green-50"
+                              : col.column === mapping.amountColumn
+                              ? "text-orange-600 bg-orange-50"
+                              : "text-slate-600"
+                          }`}
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-xs opacity-60">Col {col.column}</span>
+                            <span>{col.value}</span>
+                            {col.column === mapping.dateColumn && <span className="text-xs font-normal">→ Date</span>}
+                            {col.column === mapping.nameColumn && <span className="text-xs font-normal">→ Name</span>}
+                            {col.column === mapping.amountColumn && <span className="text-xs font-normal">→ Amount</span>}
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {preview.sheets[0]?.sampleRows.map((row, i) => (
+                      <tr key={i} className="bg-white">
+                        {availableColumns.map((col) => (
+                          <td
+                            key={col.column}
+                            className={`px-4 py-2 ${
+                              col.column === mapping.dateColumn
+                                ? "bg-blue-50/50"
+                                : col.column === mapping.nameColumn
+                                ? "bg-green-50/50"
+                                : col.column === mapping.amountColumn
+                                ? "bg-orange-50/50"
+                                : ""
+                            }`}
+                          >
+                            {row[col.column] !== undefined ? String(row[col.column]) : "—"}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-4">
+              <button
+                onClick={resetImport}
+                className="px-6 py-3 rounded-lg border border-slate-300 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleImport}
+                disabled={!mapping.nameColumn || !mapping.amountColumn}
+                className="flex-1 rounded-lg bg-[#0070f3] px-6 py-3 text-white font-medium hover:bg-[#0060df] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Import Expenses
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Step 3: Importing */}
+        {step === "importing" && (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[#0070f3]/10 flex items-center justify-center animate-pulse">
+              <svg className="w-8 h-8 text-[#0070f3] animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-medium text-slate-900 mb-2">
+              Importing your expenses...
+            </h3>
+            <p className="text-slate-600">
+              This may take a moment for large files.
+            </p>
+          </div>
+        )}
+
+        {/* Step 4: Results */}
+        {step === "result" && result && (
+          <div className="space-y-6">
+            <div className={`p-4 rounded-lg ${result.success ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600"}`}>
+              {result.success
+                ? `Successfully imported ${result.imported} expenses!`
+                : `Import completed with issues. ${result.imported} expenses imported.`}
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-4 rounded-lg border border-slate-200">
+                <p className="text-sm text-slate-500">Living (Fixed)</p>
+                <p className="text-2xl font-bold text-slate-900">{result.stats.survivalFixed}</p>
+              </div>
+              <div className="p-4 rounded-lg border border-slate-200">
+                <p className="text-sm text-slate-500">Living (Variable)</p>
+                <p className="text-2xl font-bold text-slate-900">{result.stats.survivalVariable}</p>
+              </div>
+              <div className="p-4 rounded-lg border border-slate-200">
+                <p className="text-sm text-slate-500">Lifestyle</p>
+                <p className="text-2xl font-bold text-slate-900">{result.stats.lifestyle}</p>
+              </div>
+              <div className="p-4 rounded-lg border border-slate-200">
+                <p className="text-sm text-slate-500">Project</p>
+                <p className="text-2xl font-bold text-slate-900">{result.stats.project}</p>
+              </div>
+            </div>
+
+            {/* Sheets processed */}
+            {result.sheets && result.sheets.length > 0 && (
+              <div className="p-4 rounded-lg bg-slate-50">
+                <p className="text-sm font-medium text-slate-700 mb-2">
+                  Sheets processed:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {result.sheets.map((sheet) => (
+                    <span key={sheet} className="px-2 py-1 rounded bg-slate-200 text-sm text-slate-700">
+                      {sheet}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Errors */}
+            {result.errors.length > 0 && (
+              <div className="p-4 rounded-lg bg-yellow-50">
+                <p className="font-medium text-yellow-700 mb-2">
+                  {result.errors.length} rows had issues:
+                </p>
+                <ul className="text-sm text-yellow-600 space-y-1">
+                  {result.errors.map((err, i) => (
+                    <li key={i}>• {err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-4">
+              <button
+                onClick={() => router.push("/dashboard")}
+                className="rounded-lg bg-[#0070f3] px-6 py-3 text-white font-medium hover:bg-[#0060df] transition-colors"
+              >
+                Go to Dashboard
+              </button>
+              <button
+                onClick={resetImport}
+                className="rounded-lg border border-slate-300 px-6 py-3 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
+              >
+                Import Another File
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Format Info */}
+        {step === "upload" && (
+          <div className="mt-12 p-6 rounded-xl bg-slate-50">
+            <h3 className="font-semibold text-slate-900 mb-3">
+              How it works
+            </h3>
+            <ul className="space-y-2 text-sm text-slate-600">
+              <li>
+                <strong>1. Upload</strong> — We accept any Excel or CSV file
+              </li>
+              <li>
+                <strong>2. Map columns</strong> — Tell us which columns contain date, description, and amount
+              </li>
+              <li>
+                <strong>3. Classification</strong> — We automatically categorize expenses:
+                <ul className="ml-4 mt-1 space-y-1">
+                  <li>• <strong>Living (Fixed):</strong> Subscriptions, rent, insurance (no date = recurring)</li>
+                  <li>• <strong>Living (Variable):</strong> Utilities like electricity, water, gas</li>
+                  <li>• <strong>Lifestyle:</strong> Daily spending (items with dates)</li>
+                  <li>• <strong>Project:</strong> Specific goals like home renovation</li>
+                </ul>
+              </li>
+            </ul>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}

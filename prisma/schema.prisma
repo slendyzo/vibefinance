@@ -1,0 +1,370 @@
+// VibeFinance Database Schema
+// Supports both PostgreSQL (SaaS) and SQLite (Self-hosted) via environment variables
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum SubscriptionStatus {
+  BASIC
+  PRO
+  LIFETIME
+}
+
+enum WorkspaceType {
+  PERSONAL
+  SHARED
+}
+
+enum ExpenseType {
+  SURVIVAL_FIXED    // Fixed recurring (Spotify, Rent, Car Lease)
+  SURVIVAL_VARIABLE // Variable recurring (Utilities: Luz, Água, Gás)
+  LIFESTYLE         // Daily variable spending
+  PROJECT           // Tagged to a specific project (e.g., Casa)
+}
+
+enum ExpenseStatus {
+  PAID
+  PENDING
+}
+
+enum RecurrenceInterval {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+// ============================================================================
+// USER & AUTH
+// ============================================================================
+
+model User {
+  id                 String             @id @default(cuid())
+  email              String             @unique
+  name               String?
+  password           String?            // Hashed, nullable for OAuth users
+  image              String?
+  emailVerified      DateTime?
+  subscriptionStatus SubscriptionStatus @default(BASIC)
+  aiCredits          Int                @default(0)
+  aiProcessingEnabled Boolean           @default(false)
+
+  // Relations
+  accounts           Account[]
+  sessions           Session[]
+  ownedWorkspaces    Workspace[]        @relation("WorkspaceOwner")
+  workspaceMembers   WorkspaceMember[]
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@map("users")
+}
+
+// NextAuth.js required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================================================
+// WORKSPACE (Multi-tenancy)
+// ============================================================================
+
+model Workspace {
+  id       String        @id @default(cuid())
+  name     String
+  type     WorkspaceType @default(PERSONAL)
+  ownerId  String
+
+  // Relations
+  owner        User              @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members      WorkspaceMember[]
+  bankAccounts BankAccount[]
+  expenses     Expense[]
+  projects     Project[]
+  categories   Category[]
+  recurringTemplates RecurringTemplate[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String @default("MEMBER") // OWNER, ADMIN, MEMBER
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_members")
+}
+
+// ============================================================================
+// BANK ACCOUNTS
+// ============================================================================
+
+model BankAccount {
+  id          String  @id @default(cuid())
+  workspaceId String
+  name        String  // e.g., "Millennium Pessoal"
+  balance     Decimal @default(0) @db.Decimal(12, 2)
+  currency    String  @default("EUR")
+  icon        String? // Optional icon identifier
+  isActive    Boolean @default(true)
+
+  // Relations
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  expenses  Expense[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("bank_accounts")
+}
+
+// ============================================================================
+// CATEGORIES
+// ============================================================================
+
+model Category {
+  id          String  @id @default(cuid())
+  workspaceId String
+  name        String  // e.g., "Dining", "Transport", "Utilities"
+  icon        String? // Optional icon identifier
+  color       String? // Hex color for UI
+  isSystem    Boolean @default(false) // System-defined categories can't be deleted
+
+  // Relations
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  expenses  Expense[]
+  recurringTemplates RecurringTemplate[]
+  keywordMappings KeywordMapping[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([workspaceId, name])
+  @@map("categories")
+}
+
+// ============================================================================
+// PROJECTS (The "Casa" Model)
+// ============================================================================
+
+model Project {
+  id          String  @id @default(cuid())
+  workspaceId String
+  name        String  // e.g., "Casa", "Wedding", "Vacation"
+  description String?
+  budget      Decimal? @db.Decimal(12, 2) // Optional budget limit
+  isActive    Boolean @default(true)
+
+  // Relations
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  expenses  Expense[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([workspaceId, name])
+  @@map("projects")
+}
+
+// ============================================================================
+// EXPENSES
+// ============================================================================
+
+model Expense {
+  id            String        @id @default(cuid())
+  workspaceId   String
+  bankAccountId String?
+  categoryId    String?
+  projectId     String?       // For PROJECT type expenses
+
+  // Core fields
+  name          String        // Cleaned name (e.g., "McDonalds")
+  rawInput      String?       // Original sloppy input for reference
+  description   String?
+  type          ExpenseType   @default(LIFESTYLE)
+  status        ExpenseStatus @default(PAID)
+
+  // Amount handling with currency conversion
+  amount        Decimal       @db.Decimal(12, 2) // Original value
+  currency      String        @default("EUR")    // Original currency
+  amountEur     Decimal       @db.Decimal(12, 2) // Converted to EUR at entry time
+  exchangeRate  Decimal?      @db.Decimal(12, 6) // Rate used for conversion
+
+  // Date fields
+  date          DateTime      // Transaction date
+  dueDate       DateTime?     // For PENDING expenses
+  paidAt        DateTime?     // When actually paid
+
+  // Metadata
+  merchant      String?       // Normalized merchant name
+  isRecurring   Boolean       @default(false)
+  recurringTemplateId String? // Link to template if auto-generated
+
+  // Relations
+  workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  bankAccount       BankAccount?       @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  category          Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  project           Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  recurringTemplate RecurringTemplate? @relation(fields: [recurringTemplateId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([workspaceId, date])
+  @@index([workspaceId, type])
+  @@index([workspaceId, categoryId])
+  @@map("expenses")
+}
+
+// ============================================================================
+// RECURRING TEMPLATES (For auto-generating Survival expenses)
+// ============================================================================
+
+model RecurringTemplate {
+  id            String             @id @default(cuid())
+  workspaceId   String
+  categoryId    String?
+
+  name          String             // e.g., "Spotify", "Rent"
+  type          ExpenseType        // SURVIVAL_FIXED or SURVIVAL_VARIABLE
+  amount        Decimal?           @db.Decimal(12, 2) // Fixed amount (null for variable)
+  currency      String             @default("EUR")
+
+  // Recurrence settings
+  interval      RecurrenceInterval @default(MONTHLY)
+  dayOfMonth    Int?               // 1-31, for monthly recurrence
+  dayOfWeek     Int?               // 0-6, for weekly recurrence
+
+  isActive      Boolean            @default(true)
+  lastGenerated DateTime?          // Last time an expense was auto-created
+  nextDue       DateTime?          // Next scheduled generation
+
+  // Relations
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  expenses  Expense[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("recurring_templates")
+}
+
+// ============================================================================
+// SMART PARSING (Level 1 - Local keyword mapping)
+// ============================================================================
+
+model KeywordMapping {
+  id          String  @id @default(cuid())
+  workspaceId String?  // null = global/system mapping
+  categoryId  String
+
+  keyword     String  // e.g., "mcd", "uber", "spotify"
+  merchantName String // Cleaned name: "McDonalds", "Uber", "Spotify"
+  isSystem    Boolean @default(false)
+
+  // Relations
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([workspaceId, keyword])
+  @@index([keyword])
+  @@map("keyword_mappings")
+}
+
+// ============================================================================
+// PURCHASE VERIFICATION (Anti-piracy)
+// ============================================================================
+
+model PurchaseReceipt {
+  id          String   @id @default(cuid())
+  userId      String
+  platform    String   // "apple" or "google"
+  productId   String   // The purchased product identifier
+  receiptData String   @db.Text // The signed receipt
+  isValid     Boolean  @default(false)
+  verifiedAt  DateTime?
+  expiresAt   DateTime? // For subscriptions
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@map("purchase_receipts")
+}
+
+// ============================================================================
+// IMPORT TRACKING
+// ============================================================================
+
+model ImportLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  fileName    String
+  fileType    String   // "csv", "xlsx", "pdf"
+  rowsTotal   Int      @default(0)
+  rowsSuccess Int      @default(0)
+  rowsFailed  Int      @default(0)
+  errors      String?  @db.Text // JSON array of error messages
+
+  createdAt   DateTime @default(now())
+
+  @@map("import_logs")
+}

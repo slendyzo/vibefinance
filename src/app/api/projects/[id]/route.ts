@@ -1,0 +1,154 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+
+// GET - Get single project
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id } = await params;
+
+    const workspace = await prisma.workspace.findFirst({
+      where: { members: { some: { userId: session.user.id } } },
+    });
+
+    if (!workspace) {
+      return NextResponse.json({ error: "No workspace found" }, { status: 400 });
+    }
+
+    const project = await prisma.project.findFirst({
+      where: { id, workspaceId: workspace.id },
+      include: {
+        _count: { select: { expenses: true } },
+      },
+    });
+
+    if (!project) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+
+    // Calculate total spent
+    const result = await prisma.expense.aggregate({
+      where: { projectId: project.id },
+      _sum: { amountEur: true },
+    });
+
+    return NextResponse.json({
+      project: {
+        ...project,
+        totalSpent: result._sum.amountEur || 0,
+      },
+    });
+  } catch (error) {
+    console.error("Get project error:", error);
+    return NextResponse.json({ error: "Failed to fetch project" }, { status: 500 });
+  }
+}
+
+// PUT - Update project
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const body = await request.json();
+    const { name, description, budget, startDate, endDate, status } = body;
+
+    if (!name) {
+      return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    }
+
+    const workspace = await prisma.workspace.findFirst({
+      where: { members: { some: { userId: session.user.id } } },
+    });
+
+    if (!workspace) {
+      return NextResponse.json({ error: "No workspace found" }, { status: 400 });
+    }
+
+    // Verify project exists and belongs to workspace
+    const existing = await prisma.project.findFirst({
+      where: { id, workspaceId: workspace.id },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+
+    const project = await prisma.project.update({
+      where: { id },
+      data: {
+        name,
+        description: description || null,
+        budget: budget !== undefined ? (budget ? parseFloat(budget) : null) : existing.budget,
+        startDate: startDate !== undefined ? (startDate ? new Date(startDate) : null) : existing.startDate,
+        endDate: endDate !== undefined ? (endDate ? new Date(endDate) : null) : existing.endDate,
+        status: status || existing.status,
+      },
+    });
+
+    return NextResponse.json({ project });
+  } catch (error) {
+    console.error("Update project error:", error);
+    return NextResponse.json({ error: "Failed to update project" }, { status: 500 });
+  }
+}
+
+// DELETE - Delete project
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id } = await params;
+
+    const workspace = await prisma.workspace.findFirst({
+      where: { members: { some: { userId: session.user.id } } },
+    });
+
+    if (!workspace) {
+      return NextResponse.json({ error: "No workspace found" }, { status: 400 });
+    }
+
+    // Verify project exists and belongs to workspace
+    const existing = await prisma.project.findFirst({
+      where: { id, workspaceId: workspace.id },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+
+    // Unlink expenses from this project (change type back to LIFESTYLE)
+    await prisma.expense.updateMany({
+      where: { projectId: id },
+      data: { projectId: null, type: "LIFESTYLE" },
+    });
+
+    // Delete the project
+    await prisma.project.delete({ where: { id } });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Delete project error:", error);
+    return NextResponse.json({ error: "Failed to delete project" }, { status: 500 });
+  }
+}

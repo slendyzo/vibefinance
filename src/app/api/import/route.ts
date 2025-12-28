@@ -1,0 +1,91 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { importExpensesFromExcel, importExpensesFromCSV, ColumnMapping } from "@/lib/importer";
+
+export async function POST(request: Request) {
+  try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Get user's workspace
+    const workspace = await prisma.workspace.findFirst({
+      where: {
+        members: {
+          some: {
+            userId: session.user.id,
+          },
+        },
+      },
+    });
+
+    if (!workspace) {
+      return NextResponse.json({ error: "No workspace found" }, { status: 400 });
+    }
+
+    const formData = await request.formData();
+    const file = formData.get("file") as File | null;
+    const mappingJson = formData.get("mapping") as string | null;
+
+    if (!file) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+
+    const fileName = file.name;
+    const fileType = fileName.split(".").pop()?.toLowerCase();
+
+    // Parse column mapping if provided
+    let mapping: ColumnMapping | undefined;
+    if (mappingJson) {
+      try {
+        mapping = JSON.parse(mappingJson);
+      } catch {
+        return NextResponse.json({ error: "Invalid column mapping" }, { status: 400 });
+      }
+    }
+
+    let result;
+
+    if (fileType === "csv") {
+      const text = await file.text();
+      result = await importExpensesFromCSV(
+        text,
+        workspace.id,
+        session.user.id,
+        fileName,
+        mapping
+      );
+    } else if (fileType === "xlsx" || fileType === "xls") {
+      const buffer = await file.arrayBuffer();
+      result = await importExpensesFromExcel(
+        Buffer.from(buffer),
+        workspace.id,
+        session.user.id,
+        fileName,
+        mapping
+      );
+    } else {
+      return NextResponse.json(
+        { error: "Unsupported file type. Please upload CSV or Excel files." },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json({
+      success: result.success,
+      imported: result.imported,
+      stats: result.stats,
+      errors: result.errors,
+      sheets: result.sheets,
+    });
+  } catch (error) {
+    console.error("Import error:", error);
+    return NextResponse.json(
+      { error: "Failed to import file" },
+      { status: 500 }
+    );
+  }
+}

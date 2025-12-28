@@ -1,0 +1,81 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+
+// GET - List categories
+export async function GET() {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const workspace = await prisma.workspace.findFirst({
+      where: { members: { some: { userId: session.user.id } } },
+    });
+
+    if (!workspace) {
+      return NextResponse.json({ error: "No workspace found" }, { status: 400 });
+    }
+
+    const categories = await prisma.category.findMany({
+      where: { workspaceId: workspace.id },
+      orderBy: [{ isSystem: "desc" }, { name: "asc" }],
+      include: {
+        _count: { select: { expenses: true } },
+      },
+    });
+
+    return NextResponse.json({ categories });
+  } catch (error) {
+    console.error("Get categories error:", error);
+    return NextResponse.json({ error: "Failed to fetch categories" }, { status: 500 });
+  }
+}
+
+// POST - Create category
+export async function POST(request: Request) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { name } = body;
+
+    if (!name) {
+      return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    }
+
+    const workspace = await prisma.workspace.findFirst({
+      where: { members: { some: { userId: session.user.id } } },
+    });
+
+    if (!workspace) {
+      return NextResponse.json({ error: "No workspace found" }, { status: 400 });
+    }
+
+    // Check for duplicate name
+    const existing = await prisma.category.findFirst({
+      where: { workspaceId: workspace.id, name: { equals: name, mode: "insensitive" } },
+    });
+
+    if (existing) {
+      return NextResponse.json({ error: "Category already exists" }, { status: 400 });
+    }
+
+    const category = await prisma.category.create({
+      data: {
+        workspaceId: workspace.id,
+        name,
+        isSystem: false,
+      },
+    });
+
+    return NextResponse.json({ category }, { status: 201 });
+  } catch (error) {
+    console.error("Create category error:", error);
+    return NextResponse.json({ error: "Failed to create category" }, { status: 500 });
+  }
+}
