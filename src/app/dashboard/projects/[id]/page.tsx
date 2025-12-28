@@ -29,7 +29,7 @@ type Expense = {
   date: string;
   category: { id: string; name: string } | null;
   bankAccount: { id: string; name: string } | null;
-  project: { id: string; name: string } | null;
+  projects: { id: string; name: string }[];
 };
 
 type Project = {

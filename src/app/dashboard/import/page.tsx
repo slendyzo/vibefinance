@@ -81,6 +81,38 @@ export default function ImportPage() {
     setIsLoading(true);
     setError(null);
 
+    // PDF files skip preview and go directly to import
+    if (selectedFile.name.toLowerCase().endsWith(".pdf")) {
+      setStep("importing");
+
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      try {
+        const response = await fetch("/api/import", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data: ImportResponse = await response.json();
+
+        if (!response.ok) {
+          setError(data.errors?.[0] || "Failed to import PDF");
+          setStep("upload");
+        } else {
+          setResult(data);
+          setStep("result");
+        }
+      } catch {
+        setError("Failed to import PDF file");
+        setStep("upload");
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // For CSV/Excel files, preview first
     const formData = new FormData();
     formData.append("file", selectedFile);
 
@@ -313,7 +345,7 @@ export default function ImportPage() {
             >
               <input
                 type="file"
-                accept=".csv,.xlsx,.xls"
+                accept=".csv,.xlsx,.xls,.pdf"
                 onChange={handleFileInput}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 disabled={isLoading}
@@ -333,7 +365,7 @@ export default function ImportPage() {
                     <p className="text-slate-900 font-medium">
                       Drop your file here, or click to browse
                     </p>
-                    <p className="text-sm text-slate-500">Supports .csv, .xlsx, .xls</p>
+                    <p className="text-sm text-slate-500">Supports .csv, .xlsx, .xls, .pdf</p>
                   </>
                 )}
               </div>

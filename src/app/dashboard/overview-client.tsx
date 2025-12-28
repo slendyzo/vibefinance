@@ -13,8 +13,7 @@ type Expense = {
   type: string;
   amountEur: number;
   categoryName: string;
-  projectName: string | null;
-  projectId: string | null;
+  projects: { id: string; name: string }[];
 };
 
 type Project = { id: string; name: string };
@@ -134,8 +133,7 @@ export default function DashboardOverview({
           type: string;
           amountEur: number;
           category?: { name: string } | null;
-          project?: { name: string; id: string } | null;
-          projectId?: string | null;
+          projects?: { id: string; name: string }[];
         }) => ({
           id: e.id,
           name: e.name,
@@ -143,8 +141,7 @@ export default function DashboardOverview({
           type: e.type,
           amountEur: Number(e.amountEur),
           categoryName: e.category?.name || "Uncategorized",
-          projectName: e.project?.name || null,
-          projectId: e.projectId || null,
+          projects: e.projects || [],
         })));
       }
     } catch (error) {
@@ -184,8 +181,7 @@ export default function DashboardOverview({
           type: string;
           amountEur: number;
           category?: { name: string } | null;
-          project?: { name: string; id: string } | null;
-          projectId?: string | null;
+          projects?: { id: string; name: string }[];
         }) => ({
           id: e.id,
           name: e.name,
@@ -193,8 +189,7 @@ export default function DashboardOverview({
           type: e.type,
           amountEur: Number(e.amountEur),
           categoryName: e.category?.name || "Uncategorized",
-          projectName: e.project?.name || null,
-          projectId: e.projectId || null,
+          projects: e.projects || [],
         })));
       }
     } catch (error) {
@@ -215,13 +210,14 @@ export default function DashboardOverview({
 
   // Calculate stats (excluding projects from living/lifestyle totals unless viewing project)
   const stats = useMemo(() => {
+    const hasProjects = (e: Expense) => e.projects && e.projects.length > 0;
     const livingExpenses = expenses.filter(
-      (e) => (e.type === "SURVIVAL_FIXED" || e.type === "SURVIVAL_VARIABLE") && !e.projectId
+      (e) => (e.type === "SURVIVAL_FIXED" || e.type === "SURVIVAL_VARIABLE") && !hasProjects(e)
     );
     const lifestyleExpenses = expenses.filter(
-      (e) => e.type === "LIFESTYLE" && !e.projectId
+      (e) => e.type === "LIFESTYLE" && !hasProjects(e)
     );
-    const projectExpenses = expenses.filter((e) => e.type === "PROJECT" || e.projectId);
+    const projectExpenses = expenses.filter((e) => e.type === "PROJECT" || hasProjects(e));
 
     const livingTotal = livingExpenses.reduce((sum, e) => sum + e.amountEur, 0);
     const lifestyleTotal = lifestyleExpenses.reduce((sum, e) => sum + e.amountEur, 0);
@@ -498,10 +494,10 @@ export default function DashboardOverview({
           <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-6">
             <BurnChart
               currentMonthExpenses={expenses
-                .filter((e) => !e.projectId)
+                .filter((e) => !e.projects || e.projects.length === 0)
                 .map((e) => ({ date: e.date, amountEur: e.amountEur }))}
               previousMonthExpenses={previousMonthExpenses
-                .filter((e) => !e.projectId)
+                .filter((e) => !e.projects || e.projects.length === 0)
                 .map((e) => ({ date: e.date, amountEur: e.amountEur }))}
               currentMonthLabel={`${MONTHS[selectedMonth]} ${selectedYear}`}
               previousMonthLabel={`${MONTHS[selectedMonth === 0 ? 11 : selectedMonth - 1]} ${selectedMonth === 0 ? selectedYear - 1 : selectedYear}`}
@@ -527,13 +523,13 @@ export default function DashboardOverview({
                 className="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors group"
               >
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-medium text-slate-900 truncate">{expense.name}</p>
-                    {expense.projectName && (
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-orange-100 text-orange-700">
-                        {expense.projectName}
+                    {expense.projects && expense.projects.length > 0 && expense.projects.map((project) => (
+                      <span key={project.id} className="px-2 py-0.5 text-xs rounded-full bg-orange-100 text-orange-700">
+                        {project.name}
                       </span>
-                    )}
+                    ))}
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-sm text-slate-500">

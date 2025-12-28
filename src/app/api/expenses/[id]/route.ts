@@ -28,7 +28,7 @@ export async function GET(
       include: {
         category: true,
         bankAccount: true,
-        project: true,
+        projects: true,
       },
     });
 
@@ -56,7 +56,12 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { name, amount, type, categoryId, bankAccountId, projectId, date, currency } = body;
+    const { name, amount, type, categoryId, bankAccountId, projectId, projectIds, date, currency } = body;
+
+    // Support both single projectId (legacy) and projectIds array
+    const projectIdsToSet: string[] | undefined = projectIds !== undefined
+      ? projectIds
+      : (projectId !== undefined ? (projectId ? [projectId] : []) : undefined);
 
     const workspace = await prisma.workspace.findFirst({
       where: { members: { some: { userId: session.user.id } } },
@@ -76,17 +81,19 @@ export async function PUT(
     }
 
     // Build update data
-    const updateData: {
+    type UpdateData = {
       name?: string;
       amount?: number;
       amountEur?: number;
       type?: "SURVIVAL_FIXED" | "SURVIVAL_VARIABLE" | "LIFESTYLE" | "PROJECT";
       categoryId?: string | null;
       bankAccountId?: string | null;
-      projectId?: string | null;
       date?: Date;
       currency?: string;
-    } = {};
+      projects?: { set: { id: string }[] };
+    };
+
+    const updateData: UpdateData = {};
 
     if (name !== undefined) updateData.name = name;
     if (amount !== undefined) {
@@ -96,7 +103,9 @@ export async function PUT(
     if (type !== undefined) updateData.type = type;
     if (categoryId !== undefined) updateData.categoryId = categoryId || null;
     if (bankAccountId !== undefined) updateData.bankAccountId = bankAccountId || null;
-    if (projectId !== undefined) updateData.projectId = projectId || null;
+    if (projectIdsToSet !== undefined) {
+      updateData.projects = { set: projectIdsToSet.map(pid => ({ id: pid })) };
+    }
     if (date !== undefined) updateData.date = new Date(date);
     if (currency !== undefined) updateData.currency = currency;
 
@@ -106,7 +115,7 @@ export async function PUT(
       include: {
         category: true,
         bankAccount: true,
-        project: true,
+        projects: true,
       },
     });
 

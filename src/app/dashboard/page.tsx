@@ -63,7 +63,7 @@ export default async function DashboardPage() {
     orderBy: { date: "desc" },
     include: {
       category: true,
-      project: true,
+      projects: true,
     },
   });
 
@@ -99,8 +99,7 @@ export default async function DashboardPage() {
         type: e.type,
         amountEur: Number(e.amountEur),
         categoryName: e.category?.name || "Uncategorized",
-        projectName: e.project?.name || null,
-        projectId: e.projectId || null,
+        projects: e.projects.map(p => ({ id: p.id, name: p.name })),
       }))}
       projects={projects.map((p) => ({ id: p.id, name: p.name }))}
       categories={categories.map((c) => ({ id: c.id, name: c.name }))}

@@ -26,11 +26,11 @@ export async function GET() {
       },
     });
 
-    // Calculate total spent for each project
+    // Calculate total spent for each project (many-to-many)
     const projectsWithTotals = await Promise.all(
       projects.map(async (project) => {
         const result = await prisma.expense.aggregate({
-          where: { projectId: project.id },
+          where: { projects: { some: { id: project.id } } },
           _sum: { amountEur: true },
         });
         return {
@@ -70,6 +70,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No workspace found" }, { status: 400 });
     }
 
+    // Check if project with same name already exists
+    const existing = await prisma.project.findFirst({
+      where: { workspaceId: workspace.id, name },
+    });
+
+    if (existing) {
+      return NextResponse.json({ error: "A project with this name already exists" }, { status: 400 });
+    }
+
     const project = await prisma.project.create({
       data: {
         workspaceId: workspace.id,
@@ -82,6 +91,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ project }, { status: 201 });
   } catch (error) {
     console.error("Create project error:", error);
+    // Handle unique constraint violation
+    if (error instanceof Error && error.message.includes("Unique constraint")) {
+      return NextResponse.json({ error: "A project with this name already exists" }, { status: 400 });
+    }
     return NextResponse.json({ error: "Failed to create project" }, { status: 500 });
   }
 }

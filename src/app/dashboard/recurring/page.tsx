@@ -1,8 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import QuickCreateCategory from "@/components/quick-create-category";
 
 type Category = {
+  id: string;
+  name: string;
+};
+
+type BankAccount = {
   id: string;
   name: string;
 };
@@ -19,12 +25,13 @@ type Template = {
   lastGenerated: string | null;
   nextDue: string | null;
   category: Category | null;
+  bankAccount: BankAccount | null;
   _count: { expenses: number };
 };
 
 const EXPENSE_TYPES = [
-  { value: "SURVIVAL_FIXED", label: "Survival (Fixed)", color: "bg-blue-100 text-blue-800" },
-  { value: "SURVIVAL_VARIABLE", label: "Survival (Variable)", color: "bg-cyan-100 text-cyan-800" },
+  { value: "SURVIVAL_FIXED", label: "Living Costs (Fixed)", color: "bg-blue-100 text-blue-800" },
+  { value: "SURVIVAL_VARIABLE", label: "Living Costs (Variable)", color: "bg-cyan-100 text-cyan-800" },
   { value: "LIFESTYLE", label: "Lifestyle", color: "bg-purple-100 text-purple-800" },
   { value: "PROJECT", label: "Project", color: "bg-amber-100 text-amber-800" },
 ];
@@ -37,6 +44,7 @@ const MONTHS = [
 export default function RecurringTemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -58,11 +66,13 @@ export default function RecurringTemplatesPage() {
     currency: "EUR",
     dayOfMonth: "", // Empty = no specific date (just monthly)
     categoryId: "",
+    bankAccountId: "",
   });
 
   useEffect(() => {
     fetchTemplates();
     fetchCategories();
+    fetchBankAccounts();
   }, []);
 
   const fetchTemplates = async () => {
@@ -91,6 +101,18 @@ export default function RecurringTemplatesPage() {
     }
   };
 
+  const fetchBankAccounts = async () => {
+    try {
+      const response = await fetch("/api/bank-accounts");
+      const data = await response.json();
+      if (data.bankAccounts) {
+        setBankAccounts(data.bankAccounts);
+      }
+    } catch (error) {
+      console.error("Failed to fetch bank accounts:", error);
+    }
+  };
+
   const handleCreate = async () => {
     if (!formData.name.trim()) return;
 
@@ -109,6 +131,7 @@ export default function RecurringTemplatesPage() {
           currency: "EUR",
           dayOfMonth: "",
           categoryId: "",
+          bankAccountId: "",
         });
         setIsCreating(false);
         fetchTemplates();
@@ -213,6 +236,7 @@ export default function RecurringTemplatesPage() {
       currency: template.currency,
       dayOfMonth: template.dayOfMonth?.toString() || "",
       categoryId: template.category?.id || "",
+      bankAccountId: template.bankAccount?.id || "",
     });
     setEditingId(template.id);
     setIsCreating(false);
@@ -226,6 +250,7 @@ export default function RecurringTemplatesPage() {
       currency: "EUR",
       dayOfMonth: "",
       categoryId: "",
+      bankAccountId: "",
     });
     setIsCreating(true);
     setEditingId(null);
@@ -248,7 +273,7 @@ export default function RecurringTemplatesPage() {
   const activeTemplates = templates.filter((t) => t.isActive);
   const monthlyTotal = activeTemplates
     .filter((t) => t.amount)
-    .reduce((sum, t) => sum + (t.amount || 0), 0);
+    .reduce((sum, t) => sum + parseFloat(String(t.amount || 0)), 0);
 
   if (isLoading) {
     return (
@@ -372,16 +397,40 @@ export default function RecurringTemplatesPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+              <div className="flex gap-1">
+                <select
+                  value={formData.categoryId}
+                  onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+                  className="flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Uncategorized</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+                <QuickCreateCategory
+                  onCreated={(newCat) => {
+                    setCategories([...categories, newCat]);
+                    setFormData({ ...formData, categoryId: newCat.id });
+                  }}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Bank Account</label>
               <select
-                value={formData.categoryId}
-                onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+                value={formData.bankAccountId}
+                onChange={(e) => setFormData({ ...formData, bankAccountId: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">None</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                <option value="">No bank account</option>
+                {bankAccounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>{acc.name}</option>
                 ))}
               </select>
+              <p className="text-xs text-slate-400 mt-1">
+                <a href="/dashboard/accounts" className="text-blue-500 hover:underline">Manage accounts</a>
+              </p>
             </div>
           </div>
           <div className="flex gap-3 mt-4">
@@ -423,8 +472,9 @@ export default function RecurringTemplatesPage() {
                 {editingId === template.id ? (
                   // Edit Form
                   <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                       <div className="lg:col-span-2">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Name</label>
                         <input
                           type="text"
                           value={formData.name}
@@ -432,53 +482,94 @@ export default function RecurringTemplatesPage() {
                           className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
-                      <select
-                        value={formData.type}
-                        onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      >
-                        {EXPENSE_TYPES.map((type) => (
-                          <option key={type.value} value={type.value}>{type.label}</option>
-                        ))}
-                      </select>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={formData.amount}
-                        onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                        placeholder="Amount"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
-                      <input
-                        type="number"
-                        min="1"
-                        max="31"
-                        value={formData.dayOfMonth}
-                        onChange={(e) => setFormData({ ...formData, dayOfMonth: e.target.value })}
-                        placeholder="Any"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
-                      <select
-                        value={formData.categoryId}
-                        onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">No Category</option>
-                        {categories.map((cat) => (
-                          <option key={cat.id} value={cat.id}>{cat.name}</option>
-                        ))}
-                      </select>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Type</label>
+                        <select
+                          value={formData.type}
+                          onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                          {EXPENSE_TYPES.map((type) => (
+                            <option key={type.value} value={type.value}>{type.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Amount</label>
+                        <div className="flex items-center">
+                          <span className="text-slate-400 mr-1">€</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={formData.amount}
+                            onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                            placeholder="0.00"
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Day of Month</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="31"
+                          value={formData.dayOfMonth}
+                          onChange={(e) => setFormData({ ...formData, dayOfMonth: e.target.value })}
+                          placeholder="Any day"
+                          className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Category</label>
+                        <div className="flex gap-1">
+                          <select
+                            value={formData.categoryId}
+                            onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+                            className="flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Uncategorized</option>
+                            {categories.map((cat) => (
+                              <option key={cat.id} value={cat.id}>{cat.name}</option>
+                            ))}
+                          </select>
+                          <QuickCreateCategory
+                            onCreated={(newCat) => {
+                              setCategories([...categories, newCat]);
+                              setFormData({ ...formData, categoryId: newCat.id });
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Bank Account</label>
+                        <select
+                          value={formData.bankAccountId}
+                          onChange={(e) => setFormData({ ...formData, bankAccountId: e.target.value })}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">No bank account</option>
+                          {bankAccounts.map((acc) => (
+                            <option key={acc.id} value={acc.id}>{acc.name}</option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-slate-400 mt-1">
+                          <a href="/dashboard/accounts" className="text-blue-500 hover:underline">Manage accounts</a>
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-2">
                       <button
                         onClick={() => handleUpdate(template.id)}
-                        className="px-3 py-1.5 bg-[#0070f3] text-white text-sm rounded-lg hover:bg-blue-600"
+                        className="px-4 py-2 bg-[#0070f3] text-white text-sm rounded-lg hover:bg-blue-600"
                       >
-                        Save
+                        Save Changes
                       </button>
                       <button
                         onClick={() => setEditingId(null)}
-                        className="px-3 py-1.5 text-slate-600 text-sm hover:text-slate-900"
+                        className="px-4 py-2 text-slate-600 text-sm hover:text-slate-900"
                       >
                         Cancel
                       </button>
@@ -507,6 +598,14 @@ export default function RecurringTemplatesPage() {
                           {template.category && (
                             <span className="text-xs text-slate-500">
                               {template.category.name}
+                            </span>
+                          )}
+                          {template.bankAccount && (
+                            <span className="text-xs text-slate-400 flex items-center gap-1">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                              </svg>
+                              {template.bankAccount.name}
                             </span>
                           )}
                         </div>

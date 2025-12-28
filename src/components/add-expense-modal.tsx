@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import QuickCreateCategory from "./quick-create-category";
 
 type Category = {
   id: string;
@@ -41,17 +42,28 @@ export default function AddExpenseModal({
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [expenseType, setExpenseType] = useState("LIFESTYLE");
   const [categoryId, setCategoryId] = useState("");
   const [bankAccountId, setBankAccountId] = useState("");
 
-  // Project/Tag state
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  // Project/Tag state - supports multiple tags
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [showNewTagInput, setShowNewTagInput] = useState(false);
   const [newTagName, setNewTagName] = useState("");
   const [localProjects, setLocalProjects] = useState<Project[]>(projects);
+  const [localCategories, setLocalCategories] = useState<Category[]>(categories);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Update local categories when props change (compare by content to avoid infinite loops)
+  useEffect(() => {
+    const categoriesJson = JSON.stringify(categories);
+    const localCatJson = JSON.stringify(localCategories);
+    if (categoriesJson !== localCatJson) {
+      setLocalCategories(categories);
+    }
+  }, [categories, localCategories]);
 
   // Update local projects when props change (compare by content to avoid infinite loops)
   useEffect(() => {
@@ -76,9 +88,10 @@ export default function AddExpenseModal({
       setAmount("");
       setDate(new Date().toISOString().split("T")[0]);
       setShowDatePicker(false);
+      setExpenseType("LIFESTYLE");
       setCategoryId("");
       setBankAccountId("");
-      setSelectedProjectId("");
+      setSelectedProjectIds([]);
       setShowNewTagInput(false);
       setNewTagName("");
       setError("");
@@ -98,12 +111,17 @@ export default function AddExpenseModal({
       if (response.ok) {
         const data = await response.json();
         setLocalProjects([...localProjects, data.project]);
-        setSelectedProjectId(data.project.id);
+        setSelectedProjectIds([...selectedProjectIds, data.project.id]);
         setShowNewTagInput(false);
         setNewTagName("");
+        setError("");
+      } else {
+        const data = await response.json();
+        setError(data.error || "Failed to create tag");
       }
     } catch (err) {
       console.error("Failed to create tag:", err);
+      setError("Failed to create tag");
     }
   };
 
@@ -113,19 +131,16 @@ export default function AddExpenseModal({
     setError("");
 
     try {
-      // Determine type based on project selection
-      const type = selectedProjectId ? "PROJECT" : "LIFESTYLE";
-
       const response = await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
           amount: parseFloat(amount),
-          type,
+          type: expenseType,
           categoryId: categoryId || undefined,
           bankAccountId: bankAccountId || undefined,
-          projectId: selectedProjectId || undefined,
+          projectIds: selectedProjectIds.length > 0 ? selectedProjectIds : undefined,
           date,
         }),
       });
@@ -242,37 +257,46 @@ export default function AddExpenseModal({
           {/* Project Tags */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">
-              Tag (optional)
+              Tags (optional)
             </label>
             <div className="flex flex-wrap gap-2">
-              {/* No tag option */}
+              {/* Clear all tags option */}
               <button
                 type="button"
-                onClick={() => setSelectedProjectId("")}
+                onClick={() => setSelectedProjectIds([])}
                 className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                  !selectedProjectId
+                  selectedProjectIds.length === 0
                     ? "bg-slate-800 text-white"
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >
-                No tag
+                No tags
               </button>
 
-              {/* Existing project tags */}
-              {localProjects.map((project) => (
-                <button
-                  key={project.id}
-                  type="button"
-                  onClick={() => setSelectedProjectId(project.id)}
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                    selectedProjectId === project.id
-                      ? "bg-amber-500 text-white"
-                      : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                  }`}
-                >
-                  {project.name}
-                </button>
-              ))}
+              {/* Existing project tags (multi-select) */}
+              {localProjects.map((project) => {
+                const isSelected = selectedProjectIds.includes(project.id);
+                return (
+                  <button
+                    key={project.id}
+                    type="button"
+                    onClick={() => {
+                      if (isSelected) {
+                        setSelectedProjectIds(selectedProjectIds.filter(id => id !== project.id));
+                      } else {
+                        setSelectedProjectIds([...selectedProjectIds, project.id]);
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                      isSelected
+                        ? "bg-amber-500 text-white"
+                        : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                    }`}
+                  >
+                    {project.name}
+                  </button>
+                );
+              })}
 
               {/* Add new tag button */}
               {!showNewTagInput && (
@@ -326,9 +350,9 @@ export default function AddExpenseModal({
               </div>
             )}
 
-            {selectedProjectId && (
+            {selectedProjectIds.length > 0 && (
               <p className="mt-2 text-xs text-amber-600">
-                This expense will be tagged to the project
+                This expense will be tagged to {selectedProjectIds.length} project{selectedProjectIds.length > 1 ? "s" : ""}
               </p>
             )}
           </div>
@@ -338,43 +362,85 @@ export default function AddExpenseModal({
             <summary className="text-sm text-slate-500 cursor-pointer hover:text-slate-700">
               More options
             </summary>
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 space-y-3">
+              {/* Expense Type */}
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Category
+                  Expense Type
                 </label>
-                <select
-                  value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
-                >
-                  <option value="">Auto</option>
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </option>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { value: "LIFESTYLE", label: "Lifestyle", color: "purple" },
+                    { value: "SURVIVAL_FIXED", label: "Living (Fixed)", color: "blue" },
+                    { value: "SURVIVAL_VARIABLE", label: "Living (Variable)", color: "cyan" },
+                  ].map((type) => (
+                    <button
+                      key={type.value}
+                      type="button"
+                      onClick={() => setExpenseType(type.value)}
+                      className={`px-3 py-1.5 text-xs rounded-full transition-colors ${
+                        expenseType === type.value
+                          ? type.color === "purple"
+                            ? "bg-purple-600 text-white"
+                            : type.color === "blue"
+                            ? "bg-blue-600 text-white"
+                            : "bg-cyan-600 text-white"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      {type.label}
+                    </button>
                   ))}
-                </select>
+                </div>
               </div>
-              {bankAccounts.length > 0 && (
+
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Bank Account
+                    Category
                   </label>
-                  <select
-                    value={bankAccountId}
-                    onChange={(e) => setBankAccountId(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
-                  >
-                    <option value="">None</option>
-                    {bankAccounts.map((acc) => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex gap-1">
+                    <select
+                      value={categoryId}
+                      onChange={(e) => setCategoryId(e.target.value)}
+                      className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
+                    >
+                      <option value="">Auto</option>
+                      {localCategories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                    <QuickCreateCategory
+                      onCreated={(newCat) => {
+                        setLocalCategories([...localCategories, newCat]);
+                        setCategoryId(newCat.id);
+                      }}
+                      buttonClassName="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    />
+                  </div>
                 </div>
-              )}
+                {bankAccounts.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Bank Account
+                    </label>
+                    <select
+                      value={bankAccountId}
+                      onChange={(e) => setBankAccountId(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
+                    >
+                      <option value="">None</option>
+                      {bankAccounts.map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
             </div>
           </details>
 

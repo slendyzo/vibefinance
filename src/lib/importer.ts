@@ -2,6 +2,7 @@
 // Handles various Excel/CSV formats with custom column mapping
 
 import ExcelJS from "exceljs";
+import * as XLSX from "xlsx";
 import { prisma } from "./db";
 import { ExpenseType } from "@prisma/client";
 
@@ -203,6 +204,18 @@ function parseSheetDate(sheetName: string): Date | null {
 }
 
 /**
+ * Convert old .xls (BIFF) format to .xlsx format using SheetJS
+ * ExcelJS doesn't support the old .xls format, so we convert it first
+ */
+function convertXlsToXlsx(buffer: Buffer): Buffer {
+  // Read the .xls file with SheetJS
+  const xlsWorkbook = XLSX.read(buffer, { type: "buffer" });
+  // Write it back as .xlsx format
+  const xlsxBuffer = XLSX.write(xlsWorkbook, { type: "buffer", bookType: "xlsx" });
+  return Buffer.from(xlsxBuffer);
+}
+
+/**
  * Main importer function with custom column mapping
  */
 export async function importExpensesFromExcel(
@@ -234,9 +247,34 @@ export async function importExpensesFromExcel(
   };
 
   try {
+    // Check if this is an old .xls file (BIFF format) by checking file extension or magic bytes
+    const isXls = fileName.toLowerCase().endsWith(".xls") && !fileName.toLowerCase().endsWith(".xlsx");
+
+    // Convert .xls to .xlsx format if needed (ExcelJS doesn't support old .xls format)
+    let processBuffer = buffer;
+    if (isXls) {
+      console.log("Converting .xls to .xlsx format...");
+      try {
+        processBuffer = convertXlsToXlsx(buffer);
+        console.log("Conversion successful");
+      } catch (convError) {
+        console.error("Failed to convert .xls file:", convError);
+        return {
+          success: false,
+          imported: 0,
+          failed: 0,
+          errors: ["Failed to read .xls file. The file may be corrupted or in an unsupported format."],
+          stats,
+          sheets: [],
+          recurringCandidates: [],
+          recurringTemplatesCreated: 0,
+        };
+      }
+    }
+
     const workbook = new ExcelJS.Workbook();
     // @ts-expect-error ExcelJS types don't match Node 22 Buffer types
-    await workbook.xlsx.load(buffer);
+    await workbook.xlsx.load(processBuffer);
 
     console.log(`Processing ${workbook.worksheets.length} worksheets...`);
 
@@ -414,7 +452,20 @@ export async function importExpensesFromExcel(
       projectMap[projectSheetName.toLowerCase()] = project.id;
     }
 
-    // Insert expenses in batches
+    // Create the import log first so we can link expenses to it
+    const importLog = await prisma.importLog.create({
+      data: {
+        workspaceId,
+        fileName,
+        fileType: fileName.endsWith(".csv") ? "csv" : "xlsx",
+        rowsTotal: allParsedRows.length,
+        rowsSuccess: 0, // Will update after creating expenses
+        rowsFailed: errors.length,
+        errors: errors.length > 0 ? JSON.stringify(errors) : null,
+      },
+    });
+
+    // Insert expenses in batches with link to import log
     const expenseData = allParsedRows.map((row) => {
       // Find project ID based on sheet name
       let projectId: string | null = null;
@@ -426,6 +477,7 @@ export async function importExpensesFromExcel(
         workspaceId,
         categoryId: defaultCategory!.id,
         projectId,
+        importLogId: importLog.id, // Link to import batch
         name: row.name,
         rawInput: row.rawInput,
         type: row.type,
@@ -441,17 +493,10 @@ export async function importExpensesFromExcel(
       data: expenseData,
     });
 
-    // Log the import
-    await prisma.importLog.create({
-      data: {
-        workspaceId,
-        fileName,
-        fileType: fileName.endsWith(".csv") ? "csv" : "xlsx",
-        rowsTotal: allParsedRows.length,
-        rowsSuccess: result.count,
-        rowsFailed: errors.length,
-        errors: errors.length > 0 ? JSON.stringify(errors) : null,
-      },
+    // Update import log with actual success count
+    await prisma.importLog.update({
+      where: { id: importLog.id },
+      data: { rowsSuccess: result.count },
     });
 
     // Create recurring templates from candidates (skip if already exists)
@@ -554,4 +599,207 @@ function parseCsvLine(line: string, delimiter: string): string[] {
   }
   result.push(current.trim());
   return result;
+}
+
+/**
+ * Import from PDF file (bank statements)
+ * Parses PDF text to extract expense data
+ */
+export async function importExpensesFromPDF(
+  buffer: Buffer,
+  workspaceId: string,
+  userId: string,
+  fileName: string
+): Promise<ImporterResult> {
+  const errors: string[] = [];
+  const allParsedRows: ParsedRow[] = [];
+  const stats = {
+    survivalFixed: 0,
+    survivalVariable: 0,
+    lifestyle: 0,
+    project: 0,
+  };
+
+  try {
+    // Import pdf-parse (v1.1.1 - simpler API)
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pdfParse = require("pdf-parse");
+    const pdfData = await pdfParse(buffer) as { numpages: number; text: string };
+
+    console.log(`PDF parsed: ${pdfData.numpages} pages, ${pdfData.text.length} characters`);
+
+    // Split text into lines
+    const lines = pdfData.text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+
+    // Bank statement patterns
+    // Pattern 1: DD/MM/YYYY Description Amount (common Portuguese bank format)
+    // Pattern 2: DD-MM-YYYY Description Amount
+    // Pattern 3: Lines with amounts like "€123.45" or "123,45"
+
+    const datePattern = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/;
+    const amountPattern = /€?\s*(-?\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)(?:\s*€)?$/;
+    const euroAmountPattern = /(-?\d{1,3}(?:\.\d{3})*(?:,\d{2}))\s*€?/;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Try to extract date from line
+      const dateMatch = line.match(datePattern);
+      if (!dateMatch) continue;
+
+      const day = parseInt(dateMatch[1]);
+      const month = parseInt(dateMatch[2]) - 1;
+      let year = parseInt(dateMatch[3]);
+      if (year < 100) year += 2000;
+
+      const parsedDate = new Date(year, month, day);
+      if (isNaN(parsedDate.getTime())) continue;
+
+      // Get the rest of the line after the date
+      const afterDate = line.substring(dateMatch[0].length).trim();
+
+      // Try to find amount at the end
+      let amount = 0;
+      let name = afterDate;
+
+      // Try euro amount pattern first (e.g., "123,45 €" or "1.234,56")
+      const euroMatch = afterDate.match(euroAmountPattern);
+      if (euroMatch) {
+        // Convert European format (1.234,56) to number
+        const amountStr = euroMatch[1]
+          .replace(/\./g, "")  // Remove thousand separators
+          .replace(",", ".");  // Convert decimal separator
+        amount = Math.abs(parseFloat(amountStr));
+        name = afterDate.replace(euroMatch[0], "").trim();
+      } else {
+        // Try standard amount pattern
+        const amountMatch = afterDate.match(amountPattern);
+        if (amountMatch) {
+          const amountStr = amountMatch[1]
+            .replace(/\./g, "")
+            .replace(",", ".");
+          amount = Math.abs(parseFloat(amountStr));
+          name = afterDate.replace(amountMatch[0], "").trim();
+        }
+      }
+
+      // Skip if no valid amount or name
+      if (amount <= 0 || !name || name.length < 2) continue;
+
+      // Skip common non-expense items
+      const skipPatterns = [
+        /^saldo/i, /^balance/i, /^total/i, /^data mov/i,
+        /^documento/i, /^reference/i, /^movimentos/i
+      ];
+      if (skipPatterns.some(p => p.test(name))) continue;
+
+      // Determine expense type
+      const type = determineExpenseType(name, true, false);
+
+      // Update stats
+      if (type === ExpenseType.SURVIVAL_FIXED) stats.survivalFixed++;
+      else if (type === ExpenseType.SURVIVAL_VARIABLE) stats.survivalVariable++;
+      else if (type === ExpenseType.LIFESTYLE) stats.lifestyle++;
+      else if (type === ExpenseType.PROJECT) stats.project++;
+
+      allParsedRows.push({
+        sheetName: "PDF",
+        rowNumber: i + 1,
+        date: parsedDate,
+        name: name.substring(0, 100), // Limit name length
+        rawInput: line.substring(0, 200),
+        amount,
+        type,
+      });
+    }
+
+    console.log(`Extracted ${allParsedRows.length} expenses from PDF`);
+
+    if (allParsedRows.length === 0) {
+      return {
+        success: false,
+        imported: 0,
+        failed: 0,
+        errors: ["No expenses found in PDF. The file format may not be supported. Try exporting your bank statement as CSV or Excel instead."],
+        stats,
+        sheets: ["PDF"],
+        recurringCandidates: [],
+        recurringTemplatesCreated: 0,
+      };
+    }
+
+    // Get or create default category
+    let defaultCategory = await prisma.category.findFirst({
+      where: { workspaceId, name: "Uncategorized" },
+    });
+
+    if (!defaultCategory) {
+      defaultCategory = await prisma.category.create({
+        data: { workspaceId, name: "Uncategorized", isSystem: true },
+      });
+    }
+
+    // Create import log
+    const importLog = await prisma.importLog.create({
+      data: {
+        workspaceId,
+        fileName,
+        fileType: "pdf",
+        rowsTotal: allParsedRows.length,
+        rowsSuccess: 0,
+        rowsFailed: errors.length,
+        errors: errors.length > 0 ? JSON.stringify(errors) : null,
+      },
+    });
+
+    // Insert expenses
+    const expenseData = allParsedRows.map((row) => ({
+      workspaceId,
+      categoryId: defaultCategory!.id,
+      importLogId: importLog.id,
+      name: row.name,
+      rawInput: row.rawInput,
+      type: row.type,
+      status: "PAID" as const,
+      amount: row.amount,
+      currency: "EUR",
+      amountEur: row.amount,
+      date: row.date!,
+    }));
+
+    const result = await prisma.expense.createMany({
+      data: expenseData,
+    });
+
+    // Update import log
+    await prisma.importLog.update({
+      where: { id: importLog.id },
+      data: { rowsSuccess: result.count },
+    });
+
+    return {
+      success: true,
+      imported: result.count,
+      failed: errors.length,
+      errors: errors.slice(0, 20),
+      stats,
+      sheets: ["PDF"],
+      recurringCandidates: [],
+      recurringTemplatesCreated: 0,
+    };
+  } catch (error) {
+    console.error("PDF import error:", error);
+    errors.push(error instanceof Error ? error.message : "Unknown error");
+
+    return {
+      success: false,
+      imported: 0,
+      failed: 0,
+      errors: ["Failed to parse PDF file. The file may be corrupted, password-protected, or in an unsupported format."],
+      stats,
+      sheets: [],
+      recurringCandidates: [],
+      recurringTemplatesCreated: 0,
+    };
+  }
 }

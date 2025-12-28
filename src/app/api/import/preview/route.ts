@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import ExcelJS from "exceljs";
+import * as XLSX from "xlsx";
 
 export type SheetPreview = {
   name: string;
@@ -82,9 +83,10 @@ export async function POST(request: Request) {
     const arrayBuffer = await file.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
     const workbook = new ExcelJS.Workbook();
+    const fileName = file.name.toLowerCase();
 
     // Handle CSV vs Excel
-    if (file.name.endsWith(".csv")) {
+    if (fileName.endsWith(".csv")) {
       const decoder = new TextDecoder("utf-8");
       const csvContent = decoder.decode(uint8Array);
       const worksheet = workbook.addWorksheet("Sheet1");
@@ -98,7 +100,27 @@ export async function POST(request: Request) {
           row.getCell(colIndex + 1).value = val;
         });
       });
+    } else if (fileName.endsWith(".xls") && !fileName.endsWith(".xlsx")) {
+      // Handle old .xls format (BIFF) by converting to xlsx first
+      try {
+        const xlsWorkbook = XLSX.read(Buffer.from(arrayBuffer), { type: "buffer" });
+        const xlsxBuffer = XLSX.write(xlsWorkbook, { type: "buffer", bookType: "xlsx" });
+        // @ts-expect-error ExcelJS types don't match Node 22 Buffer types
+        await workbook.xlsx.load(Buffer.from(xlsxBuffer));
+      } catch (convError) {
+        console.error("Failed to convert .xls file:", convError);
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Failed to read .xls file. The file may be corrupted or in an unsupported format.",
+            sheets: [],
+            suggestedMapping: { dateColumn: null, nameColumn: null, amountColumn: null, headerRow: 1 }
+          },
+          { status: 400 }
+        );
+      }
     } else {
+      // Handle .xlsx format directly
       // @ts-expect-error ExcelJS types don't match Node 22 Buffer types
       await workbook.xlsx.load(Buffer.from(arrayBuffer));
     }

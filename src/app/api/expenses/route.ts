@@ -28,12 +28,14 @@ export async function GET(request: Request) {
     }
 
     // Build where clause
-    const where: {
+    type WhereClause = {
       workspaceId: string;
       type?: "SURVIVAL_FIXED" | "SURVIVAL_VARIABLE" | "LIFESTYLE" | "PROJECT";
       date?: { gte?: Date; lte?: Date };
-      projectId?: string | null;
-    } = {
+      projects?: { some: { id: string } } | { none: Record<string, never> };
+    };
+
+    const where: WhereClause = {
       workspaceId: workspace.id,
     };
 
@@ -49,9 +51,9 @@ export async function GET(request: Request) {
 
     if (projectId) {
       if (projectId === "__none__") {
-        where.projectId = null;
+        where.projects = { none: {} };
       } else {
-        where.projectId = projectId;
+        where.projects = { some: { id: projectId } };
       }
     }
 
@@ -64,7 +66,7 @@ export async function GET(request: Request) {
         include: {
           category: true,
           bankAccount: true,
-          project: true,
+          projects: true,
         },
       }),
       prisma.expense.count({ where }),
@@ -86,7 +88,10 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { quickAdd, name, amount, type, categoryId, bankAccountId, projectId, date, currency } = body;
+    const { quickAdd, name, amount, type, categoryId, bankAccountId, projectId, projectIds, date, currency } = body;
+
+    // Support both single projectId (legacy) and projectIds array
+    const projectIdsToConnect: string[] = projectIds || (projectId ? [projectId] : []);
 
     const workspace = await prisma.workspace.findFirst({
       where: { members: { some: { userId: session.user.id } } },
@@ -207,11 +212,14 @@ export async function POST(request: Request) {
         date: date ? new Date(date) : new Date(),
         categoryId: expenseData.categoryId,
         bankAccountId: expenseData.bankAccountId,
-        projectId: projectId || null,
+        projects: projectIdsToConnect.length > 0
+          ? { connect: projectIdsToConnect.map(id => ({ id })) }
+          : undefined,
       },
       include: {
         category: true,
         bankAccount: true,
+        projects: true,
       },
     });
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { importExpensesFromExcel, importExpensesFromCSV, ColumnMapping } from "@/lib/importer";
+import { importExpensesFromExcel, importExpensesFromCSV, importExpensesFromPDF, ColumnMapping } from "@/lib/importer";
 
 export async function POST(request: Request) {
   try {
@@ -67,9 +67,17 @@ export async function POST(request: Request) {
         fileName,
         mapping
       );
+    } else if (fileType === "pdf") {
+      const buffer = await file.arrayBuffer();
+      result = await importExpensesFromPDF(
+        Buffer.from(buffer),
+        workspace.id,
+        session.user.id,
+        fileName
+      );
     } else {
       return NextResponse.json(
-        { error: "Unsupported file type. Please upload CSV or Excel files." },
+        { error: "Unsupported file type. Please upload CSV, Excel, or PDF files." },
         { status: 400 }
       );
     }

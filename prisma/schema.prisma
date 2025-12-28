@@ -180,9 +180,10 @@ model BankAccount {
   isActive    Boolean @default(true)
 
   // Relations
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  expenses  Expense[]
-  incomes   Income[]
+  workspace          Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  expenses           Expense[]
+  incomes            Income[]
+  recurringTemplates RecurringTemplate[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -229,7 +230,7 @@ model Project {
 
   // Relations
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  expenses  Expense[]
+  expenses  Expense[] // Many-to-many relation
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -247,7 +248,6 @@ model Expense {
   workspaceId   String
   bankAccountId String?
   categoryId    String?
-  projectId     String?       // For PROJECT type expenses
 
   // Core fields
   name          String        // Cleaned name (e.g., "McDonalds")
@@ -271,13 +271,15 @@ model Expense {
   merchant      String?       // Normalized merchant name
   isRecurring   Boolean       @default(false)
   recurringTemplateId String? // Link to template if auto-generated
+  importLogId   String?       // Link to import batch for bulk delete
 
   // Relations
   workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   bankAccount       BankAccount?       @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
   category          Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  project           Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projects          Project[]          // Many-to-many: expense can have multiple tags
   recurringTemplate RecurringTemplate? @relation(fields: [recurringTemplateId], references: [id], onDelete: SetNull)
+  importLog         ImportLog?         @relation(fields: [importLogId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -285,6 +287,7 @@ model Expense {
   @@index([workspaceId, date])
   @@index([workspaceId, type])
   @@index([workspaceId, categoryId])
+  @@index([importLogId])
   @@map("expenses")
 }
 
@@ -296,6 +299,7 @@ model RecurringTemplate {
   id            String             @id @default(cuid())
   workspaceId   String
   categoryId    String?
+  bankAccountId String?
 
   name          String             // e.g., "Spotify", "Rent"
   type          ExpenseType        // SURVIVAL_FIXED or SURVIVAL_VARIABLE
@@ -312,9 +316,10 @@ model RecurringTemplate {
   nextDue       DateTime?          // Next scheduled generation
 
   // Relations
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  expenses  Expense[]
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category    Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  expenses    Expense[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -380,8 +385,12 @@ model ImportLog {
   rowsFailed  Int      @default(0)
   errors      String?  @db.Text // JSON array of error messages
 
+  // Relations
+  expenses    Expense[]
+
   createdAt   DateTime @default(now())
 
+  @@index([workspaceId])
   @@map("import_logs")
 }
 

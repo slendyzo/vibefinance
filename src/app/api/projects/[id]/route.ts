@@ -34,9 +34,9 @@ export async function GET(
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    // Calculate total spent
+    // Calculate total spent (many-to-many)
     const result = await prisma.expense.aggregate({
-      where: { projectId: project.id },
+      where: { projects: { some: { id: project.id } } },
       _sum: { amountEur: true },
     });
 
@@ -135,13 +135,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    // Unlink expenses from this project (change type back to LIFESTYLE)
-    await prisma.expense.updateMany({
-      where: { projectId: id },
-      data: { projectId: null, type: "LIFESTYLE" },
-    });
-
-    // Delete the project
+    // Delete the project (many-to-many relations are automatically cleaned up)
     await prisma.project.delete({ where: { id } });
 
     return NextResponse.json({ success: true });

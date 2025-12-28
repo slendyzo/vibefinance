@@ -28,6 +28,7 @@ export async function GET(
       where: { id, workspaceId: workspace.id },
       include: {
         category: { select: { id: true, name: true } },
+        bankAccount: { select: { id: true, name: true } },
         _count: { select: { expenses: true } },
       },
     });
@@ -56,7 +57,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { name, type, amount, currency, interval, dayOfMonth, categoryId, isActive } = body;
+    const { name, type, amount, currency, interval, dayOfMonth, categoryId, bankAccountId, isActive } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -103,11 +104,13 @@ export async function PUT(
         interval: interval ? (interval as RecurrenceInterval) : existing.interval,
         dayOfMonth: parsedDayOfMonth, // null = no specific day (monthly)
         categoryId: categoryId !== undefined ? (categoryId || null) : existing.categoryId,
+        bankAccountId: bankAccountId !== undefined ? (bankAccountId || null) : existing.bankAccountId,
         isActive: isActive !== undefined ? isActive : existing.isActive,
         nextDue,
       },
       include: {
         category: { select: { id: true, name: true } },
+        bankAccount: { select: { id: true, name: true } },
       },
     });
 

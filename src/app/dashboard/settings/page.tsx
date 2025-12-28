@@ -22,6 +22,7 @@ type RecurringIncome = {
   id: string;
   name: string;
   amount: number;
+  currency: string;
   type: string;
   dayOfMonth: number | null;
 };
@@ -31,6 +32,7 @@ const CURRENCIES = [
   { code: "USD", symbol: "$", name: "US Dollar" },
   { code: "GBP", symbol: "£", name: "British Pound" },
   { code: "BRL", symbol: "R$", name: "Brazilian Real" },
+  { code: "PLN", symbol: "zł", name: "Polish Zloty" },
 ];
 
 export default function SettingsPage() {
@@ -49,6 +51,7 @@ export default function SettingsPage() {
   const [showSalaryModal, setShowSalaryModal] = useState(false);
   const [salaryName, setSalaryName] = useState("Salary");
   const [salaryAmount, setSalaryAmount] = useState("");
+  const [salaryCurrency, setSalaryCurrency] = useState("EUR");
   const [salaryDay, setSalaryDay] = useState("1");
   const [editingSalaryId, setEditingSalaryId] = useState<string | null>(null);
 
@@ -181,6 +184,7 @@ export default function SettingsPage() {
         body: JSON.stringify({
           name: salaryName || "Salary",
           amount: salaryAmount,
+          currency: salaryCurrency,
           type: "SALARY",
           isRecurring: true,
           interval: "MONTHLY",
@@ -193,6 +197,7 @@ export default function SettingsPage() {
         setShowSalaryModal(false);
         setSalaryName("Salary");
         setSalaryAmount("");
+        setSalaryCurrency("EUR");
         setSalaryDay("1");
         setEditingSalaryId(null);
         fetchData();
@@ -219,6 +224,7 @@ export default function SettingsPage() {
     setEditingSalaryId(income.id);
     setSalaryName(income.name);
     setSalaryAmount(income.amount.toString());
+    setSalaryCurrency(income.currency || "EUR");
     setSalaryDay(income.dayOfMonth?.toString() || "1");
     setShowSalaryModal(true);
   };
@@ -385,6 +391,7 @@ export default function SettingsPage() {
               setEditingSalaryId(null);
               setSalaryName("Salary");
               setSalaryAmount("");
+              setSalaryCurrency("EUR");
               setSalaryDay("1");
               setShowSalaryModal(true);
             }}
@@ -420,7 +427,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-xl font-bold text-green-600">
-                    {getCurrencySymbol(currency)}{Number(income.amount).toFixed(2)}
+                    {getCurrencySymbol(income.currency || "EUR")}{Number(income.amount).toFixed(2)}
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -524,15 +531,26 @@ export default function SettingsPage() {
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Amount ({getCurrencySymbol(currency)})
+                  Amount
                 </label>
-                <input
-                  type="number"
-                  value={salaryAmount}
-                  onChange={(e) => setSalaryAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full rounded-lg border border-slate-300 px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-green-500"
-                />
+                <div className="flex gap-2">
+                  <select
+                    value={salaryCurrency}
+                    onChange={(e) => setSalaryCurrency(e.target.value)}
+                    className="w-24 rounded-lg border border-slate-300 px-2 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  >
+                    {CURRENCIES.map((c) => (
+                      <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    value={salaryAmount}
+                    onChange={(e) => setSalaryAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
               </div>
 
               <div>

@@ -13,7 +13,7 @@ type Expense = {
   date: string;
   category: { id: string; name: string } | null;
   bankAccount: { id: string; name: string } | null;
-  project: { id: string; name: string } | null;
+  projects: { id: string; name: string }[];
 };
 
 type Category = {
@@ -60,6 +60,15 @@ export default function ExpensesPage() {
   const [sortBy, setSortBy] = useState<"date" | "amount">("date");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
 
+  // Month filter - defaults to current month
+  const currentDate = new Date();
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth();
+  const [selectedMonthFilter, setSelectedMonthFilter] = useState<string>(
+    `${currentYear}-${String(currentMonth).padStart(2, "0")}`
+  );
+  const [expandedYear, setExpandedYear] = useState<number | null>(null);
+
   // Pagination
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
@@ -67,13 +76,18 @@ export default function ExpensesPage() {
 
   useEffect(() => {
     fetchData();
-  }, [page, typeFilter, limit]);
+  }, [page, typeFilter, limit, selectedMonthFilter]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
-      if (limit !== "all") {
+      // When filtering by a specific month, we fetch more data since filtering is client-side
+      // For "all" view, use pagination
+      if (selectedMonthFilter !== "all") {
+        // Fetch all expenses for month filtering (client-side filter)
+        params.set("limit", "10000");
+      } else if (limit !== "all") {
         params.set("limit", limit.toString());
         params.set("offset", (page * limit).toString());
       } else {
@@ -127,9 +141,18 @@ export default function ExpensesPage() {
 
   // Sort and filter expenses
   const sortedExpenses = useMemo(() => {
-    const filtered = expenses.filter((e) =>
+    let filtered = expenses.filter((e) =>
       searchQuery ? e.name.toLowerCase().includes(searchQuery.toLowerCase()) : true
     );
+
+    // Apply month filter (unless "all" is selected)
+    if (selectedMonthFilter !== "all") {
+      filtered = filtered.filter((e) => {
+        const date = new Date(e.date);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth()).padStart(2, "0")}`;
+        return monthKey === selectedMonthFilter;
+      });
+    }
 
     // Sort based on current sort settings
     return [...filtered].sort((a, b) => {
@@ -143,7 +166,7 @@ export default function ExpensesPage() {
         return sortOrder === "desc" ? amountB - amountA : amountA - amountB;
       }
     });
-  }, [expenses, searchQuery, sortBy, sortOrder]);
+  }, [expenses, searchQuery, sortBy, sortOrder, selectedMonthFilter]);
 
   // Group expenses by month (for grouped view)
   const groupedExpenses = useMemo(() => {
@@ -177,6 +200,21 @@ export default function ExpensesPage() {
     return result;
   }, [sortedExpenses, sortOrder]);
 
+  // Compute available years from expenses (for older years dropdown)
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    expenses.forEach((e) => {
+      const year = new Date(e.date).getFullYear();
+      years.add(year);
+    });
+    return Array.from(years).sort((a, b) => b - a); // Most recent first
+  }, [expenses]);
+
+  // Get older years (not current year)
+  const olderYears = useMemo(() => {
+    return availableYears.filter((y) => y < currentYear);
+  }, [availableYears, currentYear]);
+
   const typeColors: Record<string, string> = {
     SURVIVAL_FIXED: "bg-blue-100 text-blue-700",
     SURVIVAL_VARIABLE: "bg-cyan-100 text-cyan-700",
@@ -200,7 +238,17 @@ export default function ExpensesPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Expenses</h1>
           <p className="text-slate-500 text-sm mt-1">
-            {total} total expenses
+            {selectedMonthFilter !== "all" ? (
+              <>
+                {sortedExpenses.length} expenses in {
+                  selectedMonthFilter === `${currentYear}-${String(currentMonth).padStart(2, "0")}`
+                    ? "this month"
+                    : MONTHS[parseInt(selectedMonthFilter.split("-")[1])] + " " + selectedMonthFilter.split("-")[0]
+                }
+              </>
+            ) : (
+              <>{total} total expenses</>
+            )}
           </p>
         </div>
         <button
@@ -212,6 +260,109 @@ export default function ExpensesPage() {
           </svg>
           Add Expense
         </button>
+      </div>
+
+      {/* Month Filter Bar */}
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
+        <div className="flex flex-wrap gap-2 items-center">
+          {/* All button */}
+          <button
+            onClick={() => setSelectedMonthFilter("all")}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              selectedMonthFilter === "all"
+                ? "bg-[#0070f3] text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            All
+          </button>
+
+          {/* Current year months */}
+          {MONTHS.map((month, index) => {
+            const monthKey = `${currentYear}-${String(index).padStart(2, "0")}`;
+            const isSelected = selectedMonthFilter === monthKey;
+            const isFuture = index > currentMonth;
+            return (
+              <button
+                key={monthKey}
+                onClick={() => setSelectedMonthFilter(monthKey)}
+                disabled={isFuture}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                  isSelected
+                    ? "bg-[#0070f3] text-white"
+                    : isFuture
+                    ? "bg-slate-50 text-slate-300 cursor-not-allowed"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {month.slice(0, 3)}
+              </button>
+            );
+          })}
+
+          {/* Older years dropdown */}
+          {olderYears.length > 0 && (
+            <div className="relative ml-2">
+              <button
+                onClick={() => setExpandedYear(expandedYear ? null : olderYears[0])}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1 ${
+                  expandedYear || (selectedMonthFilter !== "all" && parseInt(selectedMonthFilter.split("-")[0]) < currentYear)
+                    ? "bg-slate-700 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                Older
+                <svg className={`w-4 h-4 transition-transform ${expandedYear ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {expandedYear && (
+                <div className="absolute top-full left-0 mt-2 bg-white rounded-lg shadow-lg border border-slate-200 p-2 z-10 min-w-[200px]">
+                  {/* Year tabs */}
+                  <div className="flex gap-1 mb-2 pb-2 border-b border-slate-100">
+                    {olderYears.map((year) => (
+                      <button
+                        key={year}
+                        onClick={() => setExpandedYear(year)}
+                        className={`px-2 py-1 rounded text-sm font-medium transition-colors ${
+                          expandedYear === year
+                            ? "bg-slate-700 text-white"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        {year}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Months for selected older year */}
+                  <div className="grid grid-cols-3 gap-1">
+                    {MONTHS.map((month, index) => {
+                      const monthKey = `${expandedYear}-${String(index).padStart(2, "0")}`;
+                      const isSelected = selectedMonthFilter === monthKey;
+                      return (
+                        <button
+                          key={monthKey}
+                          onClick={() => {
+                            setSelectedMonthFilter(monthKey);
+                            setExpandedYear(null);
+                          }}
+                          className={`px-2 py-1.5 rounded text-sm transition-colors ${
+                            isSelected
+                              ? "bg-[#0070f3] text-white"
+                              : "hover:bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {month.slice(0, 3)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
@@ -328,8 +479,17 @@ export default function ExpensesPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="text-sm font-medium text-slate-900">{expense.name}</div>
-                        {expense.project && (
-                          <div className="text-xs text-slate-500">{expense.project.name}</div>
+                        {expense.projects && expense.projects.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {expense.projects.map((project) => (
+                              <span
+                                key={project.id}
+                                className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700"
+                              >
+                                {project.name}
+                              </span>
+                            ))}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3">
