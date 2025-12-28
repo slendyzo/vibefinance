@@ -1,10 +1,31 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import AddExpenseModal from "@/components/add-expense-modal";
 import { LivingGauge } from "@/components/ui/living-gauge";
-import { BurnChart } from "@/components/ui/burn-chart";
+
+// Lazy load BurnChart to reduce initial bundle size (Recharts is ~45kB!)
+const BurnChart = lazy(() => import("@/components/ui/burn-chart").then(mod => ({ default: mod.BurnChart })));
+
+// Loading skeleton for the chart
+function ChartSkeleton() {
+  return (
+    <div className="w-full animate-pulse">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <div className="h-5 w-32 bg-slate-200 rounded" />
+          <div className="h-4 w-48 bg-slate-200 rounded mt-1" />
+        </div>
+        <div className="text-right">
+          <div className="h-6 w-20 bg-slate-200 rounded" />
+          <div className="h-4 w-24 bg-slate-200 rounded mt-1" />
+        </div>
+      </div>
+      <div className="h-[280px] w-full bg-slate-100 rounded-lg" />
+    </div>
+  );
+}
 
 type Expense = {
   id: string;
@@ -24,6 +45,7 @@ type Props = {
   workspaceId: string;
   userName: string;
   initialExpenses: Expense[];
+  initialPreviousMonthExpenses: Expense[];
   projects: Project[];
   categories: Category[];
   bankAccounts: BankAccount[];
@@ -46,6 +68,7 @@ export default function DashboardOverview({
   workspaceId,
   userName,
   initialExpenses,
+  initialPreviousMonthExpenses,
   projects,
   categories,
   bankAccounts,
@@ -72,19 +95,32 @@ export default function DashboardOverview({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  // Previous month data for burn chart
-  const [previousMonthExpenses, setPreviousMonthExpenses] = useState<Expense[]>([]);
+  // Previous month data for burn chart (pre-loaded from server!)
+  const [previousMonthExpenses, setPreviousMonthExpenses] = useState<Expense[]>(initialPreviousMonthExpenses);
 
   // Use monthly budget from settings, or expected income, or default to 2000
   const livingBudget = monthlyBudget || expectedMonthlyIncome || 2000;
 
-  // Fetch expenses when filters change
+  // Track if we're on initial load (server data) vs user-changed filters
+  const [hasFilterChanged, setHasFilterChanged] = useState(false);
+
+  // Fetch expenses when filters change (but not on initial mount - we have server data)
   useEffect(() => {
-    fetchExpenses();
+    if (!hasFilterChanged) return;
+
+    // Fetch both current and previous month in parallel
     if (viewMode === "month") {
-      fetchPreviousMonthExpenses();
+      fetchBothMonths();
+    } else {
+      fetchExpenses();
     }
-  }, [viewMode, selectedMonth, selectedYear, selectedQuarter, selectedProjectId]);
+  }, [viewMode, selectedMonth, selectedYear, selectedQuarter, selectedProjectId, hasFilterChanged]);
+
+  // Mark filter as changed when user interacts
+  const handleFilterChange = <T,>(setter: React.Dispatch<React.SetStateAction<T>>, value: T) => {
+    setHasFilterChanged(true);
+    setter(value);
+  };
 
   const fetchExpenses = async () => {
     setIsLoading(true);
@@ -151,7 +187,9 @@ export default function DashboardOverview({
     }
   };
 
-  const fetchPreviousMonthExpenses = async () => {
+  // Fetch both current and previous month in parallel (eliminates waterfall!)
+  const fetchBothMonths = async () => {
+    setIsLoading(true);
     try {
       // Calculate previous month
       let prevMonth = selectedMonth - 1;
@@ -161,39 +199,66 @@ export default function DashboardOverview({
         prevYear -= 1;
       }
 
-      const startDate = new Date(prevYear, prevMonth, 1);
-      const endDate = new Date(prevYear, prevMonth + 1, 0, 23, 59, 59);
+      const currentStartDate = new Date(selectedYear, selectedMonth, 1);
+      const currentEndDate = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59);
+      const prevStartDate = new Date(prevYear, prevMonth, 1);
+      const prevEndDate = new Date(prevYear, prevMonth + 1, 0, 23, 59, 59);
 
-      const params = new URLSearchParams({
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
+      const currentParams = new URLSearchParams({
+        startDate: currentStartDate.toISOString(),
+        endDate: currentEndDate.toISOString(),
         limit: "500",
       });
 
-      const response = await fetch(`/api/expenses?${params}`);
-      const data = await response.json();
+      const prevParams = new URLSearchParams({
+        startDate: prevStartDate.toISOString(),
+        endDate: prevEndDate.toISOString(),
+        limit: "500",
+      });
 
-      if (data.expenses) {
-        setPreviousMonthExpenses(data.expenses.map((e: {
-          id: string;
-          name: string;
-          date: string;
-          type: string;
-          amountEur: number;
-          category?: { name: string } | null;
-          projects?: { id: string; name: string }[];
-        }) => ({
-          id: e.id,
-          name: e.name,
-          date: e.date,
-          type: e.type,
-          amountEur: Number(e.amountEur),
-          categoryName: e.category?.name || "Uncategorized",
-          projects: e.projects || [],
-        })));
+      if (selectedProjectId) {
+        currentParams.set("projectId", selectedProjectId);
+      }
+
+      // Fetch BOTH in parallel!
+      const [currentRes, prevRes] = await Promise.all([
+        fetch(`/api/expenses?${currentParams}`),
+        fetch(`/api/expenses?${prevParams}`),
+      ]);
+
+      const [currentData, prevData] = await Promise.all([
+        currentRes.json(),
+        prevRes.json(),
+      ]);
+
+      const transformExpense = (e: {
+        id: string;
+        name: string;
+        date: string;
+        type: string;
+        amountEur: number;
+        category?: { name: string } | null;
+        projects?: { id: string; name: string }[];
+      }) => ({
+        id: e.id,
+        name: e.name,
+        date: e.date,
+        type: e.type,
+        amountEur: Number(e.amountEur),
+        categoryName: e.category?.name || "Uncategorized",
+        projects: e.projects || [],
+      });
+
+      if (currentData.expenses) {
+        setExpenses(currentData.expenses.map(transformExpense));
+      }
+      if (prevData.expenses) {
+        setPreviousMonthExpenses(prevData.expenses.map(transformExpense));
       }
     } catch (error) {
-      console.error("Failed to fetch previous month expenses:", error);
+      console.error("Failed to fetch expenses:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -294,7 +359,7 @@ export default function DashboardOverview({
             {(["month", "quarter", "year", "all"] as ViewMode[]).map((mode) => (
               <button
                 key={mode}
-                onClick={() => setViewMode(mode)}
+                onClick={() => handleFilterChange(setViewMode, mode)}
                 className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                   viewMode === mode
                     ? "bg-[#0070f3] text-white"
@@ -311,7 +376,7 @@ export default function DashboardOverview({
             <>
               <select
                 value={selectedMonth}
-                onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                onChange={(e) => handleFilterChange(setSelectedMonth, parseInt(e.target.value))}
                 className="px-3 py-2 rounded-lg border border-slate-200 text-sm"
               >
                 {MONTHS.map((month, i) => (
@@ -320,7 +385,7 @@ export default function DashboardOverview({
               </select>
               <select
                 value={selectedYear}
-                onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                onChange={(e) => handleFilterChange(setSelectedYear, parseInt(e.target.value))}
                 className="px-3 py-2 rounded-lg border border-slate-200 text-sm"
               >
                 {yearOptions.map((year) => (
@@ -334,7 +399,7 @@ export default function DashboardOverview({
             <>
               <select
                 value={selectedQuarter}
-                onChange={(e) => setSelectedQuarter(parseInt(e.target.value))}
+                onChange={(e) => handleFilterChange(setSelectedQuarter, parseInt(e.target.value))}
                 className="px-3 py-2 rounded-lg border border-slate-200 text-sm"
               >
                 {[1, 2, 3, 4].map((q) => (
@@ -343,7 +408,7 @@ export default function DashboardOverview({
               </select>
               <select
                 value={selectedYear}
-                onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                onChange={(e) => handleFilterChange(setSelectedYear, parseInt(e.target.value))}
                 className="px-3 py-2 rounded-lg border border-slate-200 text-sm"
               >
                 {yearOptions.map((year) => (
@@ -356,7 +421,7 @@ export default function DashboardOverview({
           {viewMode === "year" && (
             <select
               value={selectedYear}
-              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              onChange={(e) => handleFilterChange(setSelectedYear, parseInt(e.target.value))}
               className="px-3 py-2 rounded-lg border border-slate-200 text-sm"
             >
               {yearOptions.map((year) => (
@@ -371,7 +436,7 @@ export default function DashboardOverview({
           {/* Project Filter */}
           <select
             value={selectedProjectId || ""}
-            onChange={(e) => setSelectedProjectId(e.target.value || null)}
+            onChange={(e) => handleFilterChange(setSelectedProjectId, e.target.value || null)}
             className="px-3 py-2 rounded-lg border border-slate-200 text-sm"
           >
             <option value="">All Projects</option>
@@ -490,18 +555,20 @@ export default function DashboardOverview({
             />
           </div>
 
-          {/* Burn Chart */}
+          {/* Burn Chart - Lazy loaded to reduce initial bundle */}
           <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-6">
-            <BurnChart
-              currentMonthExpenses={expenses
-                .filter((e) => !e.projects || e.projects.length === 0)
-                .map((e) => ({ date: e.date, amountEur: e.amountEur }))}
-              previousMonthExpenses={previousMonthExpenses
-                .filter((e) => !e.projects || e.projects.length === 0)
-                .map((e) => ({ date: e.date, amountEur: e.amountEur }))}
-              currentMonthLabel={`${MONTHS[selectedMonth]} ${selectedYear}`}
-              previousMonthLabel={`${MONTHS[selectedMonth === 0 ? 11 : selectedMonth - 1]} ${selectedMonth === 0 ? selectedYear - 1 : selectedYear}`}
-            />
+            <Suspense fallback={<ChartSkeleton />}>
+              <BurnChart
+                currentMonthExpenses={expenses
+                  .filter((e) => !e.projects || e.projects.length === 0)
+                  .map((e) => ({ date: e.date, amountEur: e.amountEur }))}
+                previousMonthExpenses={previousMonthExpenses
+                  .filter((e) => !e.projects || e.projects.length === 0)
+                  .map((e) => ({ date: e.date, amountEur: e.amountEur }))}
+                currentMonthLabel={`${MONTHS[selectedMonth]} ${selectedYear}`}
+                previousMonthLabel={`${MONTHS[selectedMonth === 0 ? 11 : selectedMonth - 1]} ${selectedMonth === 0 ? selectedYear - 1 : selectedYear}`}
+              />
+            </Suspense>
           </div>
         </div>
       )}

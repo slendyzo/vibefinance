@@ -10,7 +10,7 @@ export default async function DashboardPage() {
     redirect("/auth/signin");
   }
 
-  // Get user's workspace
+  // Get user's workspace first (needed for all other queries)
   const workspace = await prisma.workspace.findFirst({
     where: {
       members: {
@@ -18,6 +18,10 @@ export default async function DashboardPage() {
           userId: session.user.id,
         },
       },
+    },
+    select: {
+      id: true,
+      monthlyBudget: true,
     },
   });
 
@@ -29,81 +33,110 @@ export default async function DashboardPage() {
     );
   }
 
-  // Get all projects for the filter
-  const projects = await prisma.project.findMany({
-    where: { workspaceId: workspace.id },
-    orderBy: { name: "asc" },
-  });
-
-  // Get categories for the modal
-  const categories = await prisma.category.findMany({
-    where: { workspaceId: workspace.id },
-    orderBy: { name: "asc" },
-  });
-
-  // Get bank accounts for the modal
-  const bankAccounts = await prisma.bankAccount.findMany({
-    where: { workspaceId: workspace.id },
-    orderBy: { name: "asc" },
-  });
-
-  // Get all expenses for initial load (current month)
+  // Calculate date ranges
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-  const expenses = await prisma.expense.findMany({
-    where: {
-      workspaceId: workspace.id,
-      date: {
-        gte: startOfMonth,
-        lte: endOfMonth,
-      },
-    },
-    orderBy: { date: "desc" },
-    include: {
-      category: true,
-      projects: true,
-    },
-  });
+  // Previous month for burn chart (fetch server-side to eliminate client waterfall)
+  const prevMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+  const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  const startOfPrevMonth = new Date(prevYear, prevMonth, 1);
+  const endOfPrevMonth = new Date(prevYear, prevMonth + 1, 0, 23, 59, 59);
 
-  // Get current month income
-  const monthlyIncomes = await prisma.income.findMany({
-    where: {
-      workspaceId: workspace.id,
-      date: {
-        gte: startOfMonth,
-        lte: endOfMonth,
+  // Run ALL queries in parallel for maximum performance
+  const [
+    projects,
+    categories,
+    bankAccounts,
+    expenses,
+    previousMonthExpenses,
+    monthlyIncomes,
+    recurringIncomes,
+  ] = await Promise.all([
+    // Projects for filter dropdown
+    prisma.project.findMany({
+      where: { workspaceId: workspace.id },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    // Categories for add modal
+    prisma.category.findMany({
+      where: { workspaceId: workspace.id },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    // Bank accounts for add modal
+    prisma.bankAccount.findMany({
+      where: { workspaceId: workspace.id },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    // Current month expenses
+    prisma.expense.findMany({
+      where: {
+        workspaceId: workspace.id,
+        date: { gte: startOfMonth, lte: endOfMonth },
       },
-    },
-  });
+      orderBy: { date: "desc" },
+      include: {
+        category: true,
+        projects: true,
+      },
+    }),
+    // Previous month expenses (for burn chart - server-side now!)
+    prisma.expense.findMany({
+      where: {
+        workspaceId: workspace.id,
+        date: { gte: startOfPrevMonth, lte: endOfPrevMonth },
+      },
+      orderBy: { date: "desc" },
+      include: {
+        category: true,
+        projects: true,
+      },
+    }),
+    // Current month income
+    prisma.income.findMany({
+      where: {
+        workspaceId: workspace.id,
+        date: { gte: startOfMonth, lte: endOfMonth },
+      },
+      select: { amountEur: true },
+    }),
+    // Recurring income for expected monthly
+    prisma.income.findMany({
+      where: {
+        workspaceId: workspace.id,
+        isRecurring: true,
+      },
+      select: { amountEur: true },
+    }),
+  ]);
+
   const monthlyIncome = monthlyIncomes.reduce((sum, i) => sum + Number(i.amountEur), 0);
-
-  // Get recurring income (salary) for expected monthly income
-  const recurringIncomes = await prisma.income.findMany({
-    where: {
-      workspaceId: workspace.id,
-      isRecurring: true,
-    },
-  });
   const expectedMonthlyIncome = recurringIncomes.reduce((sum, i) => sum + Number(i.amountEur), 0);
+
+  // Transform expenses for client component
+  const transformExpense = (e: typeof expenses[0]) => ({
+    id: e.id,
+    name: e.name,
+    date: e.date.toISOString(),
+    type: e.type,
+    amountEur: Number(e.amountEur),
+    categoryName: e.category?.name || "Uncategorized",
+    projects: e.projects.map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })),
+  });
 
   return (
     <DashboardOverview
       workspaceId={workspace.id}
       userName={session.user.name || "User"}
-      initialExpenses={expenses.map((e) => ({
-        id: e.id,
-        name: e.name,
-        date: e.date.toISOString(),
-        type: e.type,
-        amountEur: Number(e.amountEur),
-        categoryName: e.category?.name || "Uncategorized",
-        projects: e.projects.map(p => ({ id: p.id, name: p.name })),
-      }))}
-      projects={projects.map((p) => ({ id: p.id, name: p.name }))}
-      categories={categories.map((c) => ({ id: c.id, name: c.name }))}
-      bankAccounts={bankAccounts.map((b) => ({ id: b.id, name: b.name }))}
+      initialExpenses={expenses.map(transformExpense)}
+      initialPreviousMonthExpenses={previousMonthExpenses.map(transformExpense)}
+      projects={projects}
+      categories={categories}
+      bankAccounts={bankAccounts}
       initialMonth={now.getMonth()}
       initialYear={now.getFullYear()}
       monthlyBudget={workspace.monthlyBudget ? Number(workspace.monthlyBudget) : null}
