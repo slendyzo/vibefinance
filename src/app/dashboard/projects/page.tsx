@@ -186,13 +186,13 @@ export default function ProjectsPage() {
                 {project.budget && (
                   <div className="flex justify-between">
                     <span className="text-slate-500">Budget</span>
-                    <span className="font-medium text-slate-900">{project.budget.toFixed(2)}</span>
+                    <span className="font-medium text-slate-900">€{Number(project.budget).toFixed(2)}</span>
                   </div>
                 )}
                 {project.totalSpent !== undefined && (
                   <div className="flex justify-between">
                     <span className="text-slate-500">Spent</span>
-                    <span className="font-medium text-slate-900">{project.totalSpent.toFixed(2)}</span>
+                    <span className="font-medium text-slate-900">€{Number(project.totalSpent).toFixed(2)}</span>
                   </div>
                 )}
                 {project._count?.expenses !== undefined && (
