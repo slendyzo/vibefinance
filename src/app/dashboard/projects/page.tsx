@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 type Project = {
   id: string;
@@ -15,6 +16,7 @@ type Project = {
 };
 
 export default function ProjectsPage() {
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -171,7 +173,8 @@ export default function ProjectsPage() {
           {projects.map((project) => (
             <div
               key={project.id}
-              className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow"
+              className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer"
+              onClick={() => router.push(`/dashboard/projects/${project.id}`)}
             >
               <div className="flex items-start justify-between mb-3">
                 <h3 className="font-semibold text-slate-900">{project.name}</h3>
@@ -204,13 +207,13 @@ export default function ProjectsPage() {
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 flex gap-2">
                 <button
-                  onClick={() => openModal(project)}
+                  onClick={(e) => { e.stopPropagation(); openModal(project); }}
                   className="flex-1 text-sm text-slate-600 hover:text-slate-900 py-1"
                 >
                   Edit
                 </button>
                 <button
-                  onClick={() => setDeleteId(project.id)}
+                  onClick={(e) => { e.stopPropagation(); setDeleteId(project.id); }}
                   className="flex-1 text-sm text-red-500 hover:text-red-700 py-1"
                 >
                   Delete
