@@ -28,6 +28,7 @@ export type ColumnMapping = {
   headerRow: number;
   sheetsToImport: string[]; // Empty = all sheets
   projectSheets: string[]; // Sheets to tag as PROJECT type
+  splitExpensesIncomes?: boolean; // If true, positive = incomes, negative = expenses
 };
 
 export type RecurringCandidate = {
@@ -46,6 +47,7 @@ export type ImporterResult = {
     survivalVariable: number;
     lifestyle: number;
     project: number;
+    incomes: number;
   };
   sheets: string[];
   recurringCandidates: RecurringCandidate[];
@@ -60,6 +62,7 @@ export type ParsedRow = {
   rawInput: string;
   amount: number;
   type: ExpenseType;
+  isIncome?: boolean; // If true, this row should be imported as income instead of expense
 };
 
 /**
@@ -119,6 +122,7 @@ function parseExcelDate(value: unknown): Date | null {
 
 /**
  * Parse amount from various formats
+ * Returns absolute value by default, use parseAmountRaw for signed value
  */
 function parseAmount(value: unknown): number {
   if (typeof value === "number") {
@@ -133,6 +137,27 @@ function parseAmount(value: unknown): number {
 
     const num = parseFloat(cleaned);
     return isNaN(num) ? 0 : Math.abs(num);
+  }
+
+  return 0;
+}
+
+/**
+ * Parse amount preserving the sign (for detecting positive/negative values)
+ */
+function parseAmountRaw(value: unknown): number {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const cleaned = value
+      .replace(/[€$£R\s]/g, "")
+      .replace(/\./g, "")
+      .replace(",", ".");
+
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
   }
 
   return 0;
@@ -232,6 +257,7 @@ export async function importExpensesFromExcel(
     survivalVariable: 0,
     lifestyle: 0,
     project: 0,
+    incomes: 0,
   };
   const processedSheets: string[] = [];
   const recurringCandidates: RecurringCandidate[] = [];
@@ -264,7 +290,7 @@ export async function importExpensesFromExcel(
           imported: 0,
           failed: 0,
           errors: ["Failed to read .xls file. The file may be corrupted or in an unsupported format."],
-          stats,
+          stats: { ...stats, incomes: 0 },
           sheets: [],
           recurringCandidates: [],
           recurringTemplatesCreated: 0,
@@ -317,10 +343,15 @@ export async function importExpensesFromExcel(
         if (!rawName || rawName.toLowerCase() === "total") return;
         if (!rawAmount) return;
 
-        const amount = parseAmount(rawAmount);
+        // Parse amount - check raw value for positive/negative detection
+        const rawAmountValue = parseAmountRaw(rawAmount);
+        const amount = Math.abs(rawAmountValue);
         if (amount === 0) {
           return; // Skip zero amounts silently
         }
+
+        // Determine if this should be an income (positive value when splitExpensesIncomes is enabled)
+        const isIncome = columnMapping.splitExpensesIncomes && rawAmountValue > 0;
 
         const dateValue = dateCell ? getCellValue(dateCell) : null;
         let parsedDate = parseExcelDate(dateValue);
@@ -363,7 +394,9 @@ export async function importExpensesFromExcel(
         const type = determineExpenseType(rawName, originalHadDate || (lastValidDate !== null && !isProjectSheet), isProjectSheet);
 
         // Update stats
-        if (type === ExpenseType.SURVIVAL_FIXED) stats.survivalFixed++;
+        if (isIncome) {
+          stats.incomes++;
+        } else if (type === ExpenseType.SURVIVAL_FIXED) stats.survivalFixed++;
         else if (type === ExpenseType.SURVIVAL_VARIABLE) stats.survivalVariable++;
         else if (type === ExpenseType.LIFESTYLE) stats.lifestyle++;
         else if (type === ExpenseType.PROJECT) stats.project++;
@@ -385,6 +418,7 @@ export async function importExpensesFromExcel(
           rawInput: `[${sheetName}] ${rawName}: ${amount}`,
           amount,
           type,
+          isIncome,
         });
 
         rowsProcessed++;
@@ -465,16 +499,40 @@ export async function importExpensesFromExcel(
       },
     });
 
-    // Separate expenses into those with projects and those without
+    // Separate rows into incomes, project expenses, and regular expenses
+    const incomeRows: ParsedRow[] = [];
     const projectExpenses: ParsedRow[] = [];
     const regularExpenses: ParsedRow[] = [];
 
     for (const row of allParsedRows) {
-      if (row.type === ExpenseType.PROJECT && projectMap[row.sheetName.toLowerCase()]) {
+      if (row.isIncome) {
+        incomeRows.push(row);
+      } else if (row.type === ExpenseType.PROJECT && projectMap[row.sheetName.toLowerCase()]) {
         projectExpenses.push(row);
       } else {
         regularExpenses.push(row);
       }
+    }
+
+    let totalCreated = 0;
+
+    // Insert incomes in batch
+    if (incomeRows.length > 0) {
+      const incomeData = incomeRows.map((row) => ({
+        workspaceId,
+        name: row.name,
+        amount: row.amount,
+        currency: "EUR",
+        amountEur: row.amount,
+        date: row.date!,
+        isRecurring: false,
+      }));
+
+      const incomeResult = await prisma.income.createMany({
+        data: incomeData,
+      });
+      totalCreated += incomeResult.count;
+      console.log(`  → Created ${incomeResult.count} incomes`);
     }
 
     // Insert regular expenses in batch (no project relation)
@@ -491,8 +549,6 @@ export async function importExpensesFromExcel(
       amountEur: row.amount,
       date: row.date!,
     }));
-
-    let totalCreated = 0;
 
     if (regularExpenseData.length > 0) {
       const regularResult = await prisma.expense.createMany({
@@ -650,6 +706,7 @@ export async function importExpensesFromPDF(
     survivalVariable: 0,
     lifestyle: 0,
     project: 0,
+    incomes: 0,
   };
 
   try {

@@ -19,6 +19,7 @@ type PreviewResponse = {
     amountColumn: number | null;
     headerRow: number;
   };
+  hasMixedValues: boolean;
   error?: string;
 };
 
@@ -27,6 +28,7 @@ type ImportStats = {
   survivalVariable: number;
   lifestyle: number;
   project: number;
+  incomes: number;
 };
 
 type RecurringCandidate = {
@@ -52,6 +54,7 @@ type ColumnMapping = {
   headerRow: number;
   sheetsToImport: string[];
   projectSheets: string[];
+  splitExpensesIncomes: boolean; // If true, positive amounts = incomes, negative = expenses
 };
 
 type Step = "upload" | "mapping" | "importing" | "result";
@@ -74,6 +77,7 @@ export default function ImportPage() {
     headerRow: 1,
     sheetsToImport: [],
     projectSheets: [],
+    splitExpensesIncomes: false,
   });
 
   const handleFile = useCallback(async (selectedFile: File) => {
@@ -130,6 +134,7 @@ export default function ImportPage() {
       } else {
         setPreview(data);
         // Apply suggested mapping - start with ALL sheets selected
+        // Auto-check splitExpensesIncomes if mixed values detected
         setMapping({
           dateColumn: data.suggestedMapping.dateColumn,
           nameColumn: data.suggestedMapping.nameColumn || 1,
@@ -137,6 +142,7 @@ export default function ImportPage() {
           headerRow: data.suggestedMapping.headerRow,
           sheetsToImport: data.sheets.map((s) => s.name), // Select all by default
           projectSheets: [],
+          splitExpensesIncomes: data.hasMixedValues, // Auto-enable if mixed values detected
         });
         setStep("mapping");
       }
@@ -218,6 +224,7 @@ export default function ImportPage() {
       headerRow: 1,
       sheetsToImport: [],
       projectSheets: [],
+      splitExpensesIncomes: false,
     });
   };
 
@@ -460,6 +467,34 @@ export default function ImportPage() {
                 </div>
               </div>
 
+              {/* Mixed Expenses/Incomes Checkbox */}
+              <div className="p-4 rounded-lg border border-slate-200 bg-slate-50">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={mapping.splitExpensesIncomes}
+                    onChange={(e) => setMapping({ ...mapping, splitExpensesIncomes: e.target.checked })}
+                    className="mt-1 w-4 h-4 rounded border-slate-300 text-[#0070f3] focus:ring-[#0070f3]"
+                  />
+                  <div className="flex-1">
+                    <span className="font-medium text-slate-900">
+                      This file contains both expenses and incomes
+                    </span>
+                    <p className="text-sm text-slate-500 mt-0.5">
+                      Negative amounts will be imported as expenses, positive amounts as incomes.
+                    </p>
+                    {preview.hasMixedValues && (
+                      <p className="text-sm text-[#0070f3] mt-1 flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        We detected both positive and negative values in your file
+                      </p>
+                    )}
+                  </div>
+                </label>
+              </div>
+
               {/* Sheet Selection */}
               {preview.sheets.length > 1 && (
                 <div>
@@ -663,7 +698,7 @@ export default function ImportPage() {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <div className="p-4 rounded-lg border border-slate-200">
                 <p className="text-sm text-slate-500">Living (Fixed)</p>
                 <p className="text-2xl font-bold text-slate-900">{result.stats.survivalFixed}</p>
@@ -680,6 +715,12 @@ export default function ImportPage() {
                 <p className="text-sm text-slate-500">Project</p>
                 <p className="text-2xl font-bold text-slate-900">{result.stats.project}</p>
               </div>
+              {result.stats.incomes > 0 && (
+                <div className="p-4 rounded-lg border border-green-200 bg-green-50">
+                  <p className="text-sm text-green-600">Incomes</p>
+                  <p className="text-2xl font-bold text-green-700">{result.stats.incomes}</p>
+                </div>
+              )}
             </div>
 
             {/* Recurring Templates Created */}

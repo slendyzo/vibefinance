@@ -20,6 +20,7 @@ export type PreviewResponse = {
     amountColumn: number | null;
     headerRow: number;
   };
+  hasMixedValues: boolean; // true if amount column has both positive and negative values
   error?: string;
 };
 
@@ -64,6 +65,28 @@ function formatCellForPreview(value: unknown): unknown {
     return value.trim();
   }
   return value;
+}
+
+/**
+ * Parse a numeric value from various formats (handles €, commas, etc.)
+ * Returns the raw number (can be positive or negative)
+ */
+function parseNumericValue(value: unknown): number | null {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const cleaned = value
+      .replace(/[€$£R\s]/g, "")
+      .replace(/\./g, "")
+      .replace(",", ".");
+
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? null : num;
+  }
+
+  return null;
 }
 
 export async function POST(request: Request) {
@@ -114,7 +137,8 @@ export async function POST(request: Request) {
             success: false,
             error: "Failed to read .xls file. The file may be corrupted or in an unsupported format.",
             sheets: [],
-            suggestedMapping: { dateColumn: null, nameColumn: null, amountColumn: null, headerRow: 1 }
+            suggestedMapping: { dateColumn: null, nameColumn: null, amountColumn: null, headerRow: 1 },
+            hasMixedValues: false
           },
           { status: 400 }
         );
@@ -222,10 +246,53 @@ export async function POST(request: Request) {
       });
     }
 
+    // Detect if amount column has mixed positive/negative values
+    let hasMixedValues = false;
+    if (suggestedMapping.amountColumn && sheets.length > 0) {
+      const firstSheet = sheets[0];
+      let hasPositive = false;
+      let hasNegative = false;
+
+      // Check sample rows for mixed values
+      for (const row of firstSheet.sampleRows) {
+        const amountValue = row[suggestedMapping.amountColumn];
+        const numericValue = parseNumericValue(amountValue);
+        if (numericValue !== null) {
+          if (numericValue > 0) hasPositive = true;
+          if (numericValue < 0) hasNegative = true;
+        }
+      }
+
+      // Also scan more rows from the worksheet if needed
+      if ((!hasPositive || !hasNegative) && workbook.worksheets.length > 0) {
+        const worksheet = workbook.worksheets[0];
+        const headerRowNum = suggestedMapping.headerRow;
+        const maxRowsToCheck = Math.min(worksheet.rowCount, headerRowNum + 50);
+
+        for (let rowNum = headerRowNum + 1; rowNum <= maxRowsToCheck; rowNum++) {
+          const row = worksheet.getRow(rowNum);
+          const amountCell = row.getCell(suggestedMapping.amountColumn);
+          const amountValue = getCellValue(amountCell);
+          const numericValue = parseNumericValue(amountValue);
+
+          if (numericValue !== null) {
+            if (numericValue > 0) hasPositive = true;
+            if (numericValue < 0) hasNegative = true;
+          }
+
+          // Early exit if we found both
+          if (hasPositive && hasNegative) break;
+        }
+      }
+
+      hasMixedValues = hasPositive && hasNegative;
+    }
+
     const response: PreviewResponse = {
       success: true,
       sheets,
       suggestedMapping,
+      hasMixedValues,
     };
 
     return NextResponse.json(response);
@@ -236,7 +303,8 @@ export async function POST(request: Request) {
         success: false,
         error: error instanceof Error ? error.message : "Failed to preview file",
         sheets: [],
-        suggestedMapping: { dateColumn: null, nameColumn: null, amountColumn: null, headerRow: 1 }
+        suggestedMapping: { dateColumn: null, nameColumn: null, amountColumn: null, headerRow: 1 },
+        hasMixedValues: false
       },
       { status: 500 }
     );

@@ -236,6 +236,21 @@ High-end, minimalist expense tracking app with "Survival vs Lifestyle" cost anal
   - Confirmation required (type "DELETE ALL" to confirm)
   - Coming soon placeholders for: Family/Group workspaces, Profile picture, Password change, Privacy options, Data export
 
+### 18. Mixed Expense/Income Import
+
+- **Files:**
+  - `src/app/api/import/preview/route.ts` - Auto-detects mixed positive/negative values
+  - `src/app/dashboard/import/page.tsx` - Added checkbox UI for mixed import
+  - `src/lib/importer.ts` - Splits expenses and incomes based on sign
+- **Features:**
+  - Auto-detect bank statements with both expenses (negative) and incomes (positive)
+  - Checkbox in Step 2: "This file contains both expenses and incomes"
+  - Auto-checked when mixed values detected with info message
+  - Negative amounts imported as expenses
+  - Positive amounts imported as incomes
+  - Results page shows income count in green stats card
+  - Works with all import formats (Excel, CSV)
+
 ---
 
 ## Environment Variables (.env)
@@ -355,8 +370,9 @@ amigo/
 16. [x] **Settings Page** - Account settings with delete all expenses option
 17. [x] **Docker** - Production Dockerfile with multi-stage build
 18. [x] **Auto-Deploy** - GitHub Actions CI/CD to homelab via Tailscale + SSH
-19. [ ] **Family/Group Workspaces** - Share expenses with family members
-20. [ ] **Data Export** - Download expenses as CSV/Excel
+19. [x] **Mixed Expense/Income Import** - Import bank statements with both expenses and incomes
+20. [ ] **Family/Group Workspaces** - Share expenses with family members
+21. [ ] **Data Export** - Download expenses as CSV/Excel
 
 ---
 

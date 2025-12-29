@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { signOut } from "next-auth/react";
 
 type Stats = {
   totalExpenses: number;
@@ -61,6 +62,12 @@ export default function SettingsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [deleteSuccess, setDeleteSuccess] = useState("");
+
+  // Delete account state
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
+  const [deleteAccountConfirmText, setDeleteAccountConfirmText] = useState("");
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState("");
 
   useEffect(() => {
     fetchData();
@@ -265,6 +272,36 @@ export default function SettingsPage() {
 
   const getCurrencySymbol = (code: string) => {
     return CURRENCIES.find((c) => c.code === code)?.symbol || "€";
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteAccountConfirmText !== "DELETE MY ACCOUNT") {
+      setDeleteAccountError("Please type 'DELETE MY ACCOUNT' exactly to confirm");
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    setDeleteAccountError("");
+
+    try {
+      const response = await fetch("/api/account", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmText: deleteAccountConfirmText }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to delete account");
+      }
+
+      // Sign out and redirect to home
+      await signOut({ callbackUrl: "/" });
+    } catch (err) {
+      setDeleteAccountError(err instanceof Error ? err.message : "Something went wrong");
+      setIsDeletingAccount(false);
+    }
   };
 
   return (
@@ -499,6 +536,21 @@ export default function SettingsPage() {
             Delete All
           </button>
         </div>
+
+        <div className="flex items-center justify-between p-4 bg-red-50 rounded-lg mt-4">
+          <div>
+            <div className="font-medium text-slate-900">Delete Account</div>
+            <div className="text-sm text-slate-500">
+              Permanently delete your account and all associated data
+            </div>
+          </div>
+          <button
+            onClick={() => setShowDeleteAccountConfirm(true)}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Delete Account
+          </button>
+        </div>
       </div>
 
       {/* Salary Modal */}
@@ -652,6 +704,80 @@ export default function SettingsPage() {
                   className="flex-1 rounded-lg bg-red-500 px-4 py-2.5 text-white font-medium hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isDeleting ? "Deleting..." : "Delete All Expenses"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Account Confirmation Modal */}
+      {showDeleteAccountConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => {
+              setShowDeleteAccountConfirm(false);
+              setDeleteAccountConfirmText("");
+              setDeleteAccountError("");
+            }}
+          />
+          <div className="relative w-full max-w-md mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 bg-red-50">
+              <h2 className="text-lg font-semibold text-red-600">
+                Delete Your Account?
+              </h2>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="text-slate-600">
+                This action <strong>cannot be undone</strong>. This will permanently delete:
+              </div>
+              <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+                <li>Your user account</li>
+                <li>All your expenses and incomes</li>
+                <li>All your categories and projects</li>
+                <li>All your bank accounts and import history</li>
+                <li>All workspace data (if you&apos;re the only member)</li>
+              </ul>
+
+              {deleteAccountError && (
+                <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">
+                  {deleteAccountError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Type <span className="font-mono bg-slate-100 px-1">DELETE MY ACCOUNT</span> to confirm
+                </label>
+                <input
+                  type="text"
+                  value={deleteAccountConfirmText}
+                  onChange={(e) => setDeleteAccountConfirmText(e.target.value)}
+                  placeholder="DELETE MY ACCOUNT"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDeleteAccountConfirm(false);
+                    setDeleteAccountConfirmText("");
+                    setDeleteAccountError("");
+                  }}
+                  className="flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={isDeletingAccount || deleteAccountConfirmText !== "DELETE MY ACCOUNT"}
+                  className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-white font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isDeletingAccount ? "Deleting..." : "Delete My Account"}
                 </button>
               </div>
             </div>

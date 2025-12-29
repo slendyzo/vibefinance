@@ -43,7 +43,7 @@ export default function SignInPage() {
         {/* Google Sign In */}
         <button
           onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
-          className="w-full flex items-center justify-center gap-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors mb-6"
+          className="w-full flex items-center justify-center gap-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors mb-6 relative"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path
@@ -64,6 +64,9 @@ export default function SignInPage() {
             />
           </svg>
           Continue with Google
+          <span className="absolute right-3 text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full">
+            Coming Soon
+          </span>
         </button>
 
         <div className="relative mb-6">
