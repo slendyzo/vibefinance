@@ -272,6 +272,7 @@ model Expense {
   isRecurring   Boolean       @default(false)
   recurringTemplateId String? // Link to template if auto-generated
   importLogId   String?       // Link to import batch for bulk delete
+  excludeFromBudget Boolean   @default(false) // Don't count towards monthly budget (offshore/one-off)
 
   // Relations
   workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)

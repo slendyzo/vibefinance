@@ -126,6 +126,7 @@ export default async function DashboardPage() {
     amountEur: Number(e.amountEur),
     categoryName: e.category?.name || "Uncategorized",
     projects: e.projects.map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })),
+    excludeFromBudget: e.excludeFromBudget,
   });
 
   return (

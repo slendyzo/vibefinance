@@ -56,7 +56,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { name, amount, type, categoryId, bankAccountId, projectId, projectIds, date, currency } = body;
+    const { name, amount, type, categoryId, bankAccountId, projectId, projectIds, date, currency, excludeFromBudget } = body;
 
     // Support both single projectId (legacy) and projectIds array
     const projectIdsToSet: string[] | undefined = projectIds !== undefined
@@ -91,6 +91,7 @@ export async function PUT(
       date?: Date;
       currency?: string;
       projects?: { set: { id: string }[] };
+      excludeFromBudget?: boolean;
     };
 
     const updateData: UpdateData = {};
@@ -108,6 +109,7 @@ export async function PUT(
     }
     if (date !== undefined) updateData.date = new Date(date);
     if (currency !== undefined) updateData.currency = currency;
+    if (excludeFromBudget !== undefined) updateData.excludeFromBudget = excludeFromBudget;
 
     const expense = await prisma.expense.update({
       where: { id },
