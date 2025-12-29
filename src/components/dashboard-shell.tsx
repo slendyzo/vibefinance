@@ -1,7 +1,9 @@
 "use client";
 
-import Link from "next/link";
+import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
+import Link from "next/link";
+import MobileNav from "./mobile-nav";
 import type { ReactNode } from "react";
 
 const navigation = [
@@ -77,49 +79,105 @@ const icons: Record<string, ReactNode> = {
   ),
 };
 
-export default function Sidebar() {
+interface DashboardShellProps {
+  children: ReactNode;
+  userEmail?: string;
+}
+
+export default function DashboardShell({ children, userEmail }: DashboardShellProps) {
   const pathname = usePathname();
 
+  const handleSignOut = () => {
+    signOut({ callbackUrl: "/" });
+  };
+
+  // Global quick-add functionality (dispatches custom event that pages can listen to)
+  const handleAddClick = () => {
+    window.dispatchEvent(new CustomEvent("openQuickAdd"));
+  };
+
+  const isActive = (href: string) => {
+    if (href === "/dashboard") return pathname === "/dashboard";
+    return pathname.startsWith(href);
+  };
+
   return (
-    <aside className="w-64 bg-white border-r border-slate-200 min-h-screen flex flex-col">
-      {/* Logo */}
-      <div className="h-16 flex items-center px-6 border-b border-slate-200">
-        <Link href="/dashboard" className="text-xl font-bold text-slate-900">
-          Amigo
-        </Link>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 px-4 py-6 space-y-1">
-        {navigation.map((item) => {
-          const isActive = pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(item.href));
-
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`
-                flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-                ${isActive
-                  ? "bg-[#0070f3] text-white"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                }
-              `}
-            >
-              {icons[item.icon]}
-              {item.name}
-            </Link>
-          );
-        })}
-      </nav>
-
-      {/* Footer */}
-      <div className="p-4 border-t border-slate-200">
-        <div className="text-xs text-slate-400">
-          Amigo v0.1.0
+    <div className="flex min-h-screen bg-slate-50">
+      {/* Desktop Sidebar - Hidden on mobile */}
+      <aside className="hidden md:flex w-64 bg-white border-r border-slate-200 min-h-screen flex-col">
+        {/* Logo */}
+        <div className="h-16 flex items-center px-6 border-b border-slate-200">
+          <Link href="/dashboard" className="text-xl font-bold text-slate-900">
+            Amigo
+          </Link>
         </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 px-4 py-6 space-y-1">
+          {navigation.map((item) => {
+            const active = isActive(item.href);
+
+            return (
+              <Link
+                key={item.name}
+                href={item.href}
+                className={`
+                  flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                  ${active
+                    ? "bg-[#0070f3] text-white"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }
+                `}
+              >
+                {icons[item.icon]}
+                {item.name}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-slate-200">
+          <div className="text-xs text-slate-400">
+            Amigo v0.1.0
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Desktop Top Bar - Hidden on mobile */}
+        <header className="hidden md:flex h-16 bg-white border-b border-slate-200 items-center justify-end px-6">
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-slate-600">
+              {userEmail}
+            </span>
+            <button
+              onClick={handleSignOut}
+              className="text-sm text-slate-500 hover:text-slate-900 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
+        </header>
+
+        {/* Mobile Header */}
+        <header className="md:hidden flex h-14 bg-white border-b border-slate-200 items-center justify-center px-4 sticky top-0 z-40">
+          <h1 className="text-lg font-semibold text-slate-900">Amigo</h1>
+        </header>
+
+        {/* Main Content */}
+        <main className="flex-1 p-4 md:p-6 pb-20 md:pb-6 overflow-x-hidden">
+          {children}
+        </main>
       </div>
-    </aside>
+
+      {/* Mobile Navigation */}
+      <MobileNav
+        onAddClick={handleAddClick}
+        userEmail={userEmail}
+        onSignOut={handleSignOut}
+      />
+    </div>
   );
 }

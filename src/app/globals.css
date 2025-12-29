@@ -126,3 +126,53 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Mobile-first utilities */
+@layer utilities {
+  /* Safe area padding for notched devices */
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0);
+  }
+
+  /* Prevent text selection on touch */
+  .touch-none {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Smooth touch scrolling */
+  .scroll-touch {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Mobile tap highlight removal */
+  .tap-none {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Prevent body scroll when modal is open */
+body.modal-open {
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+}
+
+/* Mobile bottom nav safe area */
+.pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 1rem);
+}

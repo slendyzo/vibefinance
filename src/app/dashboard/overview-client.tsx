@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useMemo, lazy, Suspense } from "react";
+import { useState, useEffect, useMemo, lazy, Suspense, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import AddExpenseModal from "@/components/add-expense-modal";
 import { LivingGauge } from "@/components/ui/living-gauge";
+import { useSwipe } from "@/hooks/use-swipe";
 
 // Lazy load BurnChart to reduce initial bundle size (Recharts is ~45kB!)
 const BurnChart = lazy(() => import("@/components/ui/burn-chart").then(mod => ({ default: mod.BurnChart })));
@@ -103,6 +104,41 @@ export default function DashboardOverview({
 
   // Track if we're on initial load (server data) vs user-changed filters
   const [hasFilterChanged, setHasFilterChanged] = useState(false);
+
+  // Listen for quick-add event from bottom nav
+  useEffect(() => {
+    const handleQuickAdd = () => setIsModalOpen(true);
+    window.addEventListener("openQuickAdd", handleQuickAdd);
+    return () => window.removeEventListener("openQuickAdd", handleQuickAdd);
+  }, []);
+
+  // Month navigation for swipe
+  const goToPreviousMonth = useCallback(() => {
+    setHasFilterChanged(true);
+    if (selectedMonth === 0) {
+      setSelectedMonth(11);
+      setSelectedYear((y) => y - 1);
+    } else {
+      setSelectedMonth((m) => m - 1);
+    }
+  }, [selectedMonth]);
+
+  const goToNextMonth = useCallback(() => {
+    setHasFilterChanged(true);
+    if (selectedMonth === 11) {
+      setSelectedMonth(0);
+      setSelectedYear((y) => y + 1);
+    } else {
+      setSelectedMonth((m) => m + 1);
+    }
+  }, [selectedMonth]);
+
+  // Swipe handlers for month navigation (only in month view)
+  const { handlers: swipeHandlers } = useSwipe({
+    onSwipeLeft: viewMode === "month" ? goToNextMonth : undefined,
+    onSwipeRight: viewMode === "month" ? goToPreviousMonth : undefined,
+    threshold: 75,
+  });
 
   // Fetch expenses when filters change (but not on initial mount - we have server data)
   useEffect(() => {
@@ -333,16 +369,17 @@ export default function DashboardOverview({
   const yearOptions = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6" {...swipeHandlers}>
       {/* Header with Welcome and Add Button */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Welcome, {userName}!</h1>
-          <p className="text-slate-500 text-sm">Here&apos;s your financial overview</p>
+          <h1 className="text-xl md:text-2xl font-bold text-slate-900">Welcome, {userName}!</h1>
+          <p className="text-slate-500 text-xs md:text-sm">Here&apos;s your financial overview</p>
         </div>
+        {/* Desktop add button - hidden on mobile (use bottom nav instead) */}
         <button
           onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-[#0070f3] px-4 py-2.5 text-white font-medium hover:bg-[#0060df] transition-colors"
+          className="hidden md:flex items-center gap-2 rounded-lg bg-[#0070f3] px-4 py-2.5 text-white font-medium hover:bg-[#0060df] transition-colors"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -351,8 +388,84 @@ export default function DashboardOverview({
         </button>
       </div>
 
-      {/* Filters Bar */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4">
+      {/* Mobile Month Navigation with Swipe hint */}
+      {viewMode === "month" && (
+        <div className="md:hidden flex items-center justify-between bg-white rounded-xl border border-slate-200 p-3">
+          <button
+            onClick={goToPreviousMonth}
+            className="p-2 rounded-lg text-slate-600 active:bg-slate-100 tap-none"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div className="text-center">
+            <p className="font-semibold text-slate-900">{MONTHS[selectedMonth]} {selectedYear}</p>
+            <p className="text-xs text-slate-400">Swipe to change month</p>
+          </div>
+          <button
+            onClick={goToNextMonth}
+            className="p-2 rounded-lg text-slate-600 active:bg-slate-100 tap-none"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+          {isLoading && (
+            <div className="absolute right-4">
+              <svg className="w-4 h-4 animate-spin text-[#0070f3]" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Mobile Filters - Collapsible */}
+      <div className="md:hidden bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="flex overflow-x-auto scrollbar-hide p-2 gap-2">
+          {(["month", "quarter", "year", "all"] as ViewMode[]).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => handleFilterChange(setViewMode, mode)}
+              className={`flex-shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-colors tap-none ${
+                viewMode === mode
+                  ? "bg-[#0070f3] text-white"
+                  : "bg-slate-100 text-slate-600 active:bg-slate-200"
+              }`}
+            >
+              {mode.charAt(0).toUpperCase() + mode.slice(1)}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2 p-2 pt-0 overflow-x-auto scrollbar-hide">
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value as TypeFilter)}
+            className="flex-shrink-0 px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white min-w-[120px]"
+          >
+            <option value="all">All Types</option>
+            <option value="living">Living</option>
+            <option value="lifestyle">Lifestyle</option>
+            <option value="project">Projects</option>
+          </select>
+          <select
+            value={selectedProjectId || ""}
+            onChange={(e) => handleFilterChange(setSelectedProjectId, e.target.value || null)}
+            className="flex-shrink-0 px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white min-w-[120px]"
+          >
+            <option value="">All Projects</option>
+            <option value="__none__">No Project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Desktop Filters Bar */}
+      <div className="hidden md:block bg-white rounded-xl border border-slate-200 p-4">
         <div className="flex flex-wrap items-center gap-4">
           {/* View Mode Tabs */}
           <div className="flex rounded-lg border border-slate-200 p-1">
@@ -470,37 +583,37 @@ export default function DashboardOverview({
         </div>
       </div>
 
-      {/* Income & Balance Summary */}
+      {/* Income & Balance Summary - Mobile optimized */}
       {viewMode === "month" && (expectedMonthlyIncome > 0 || monthlyIncome > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-5 rounded-xl border border-green-200">
-            <p className="text-sm text-green-700 mb-1">Expected Income</p>
-            <p className="text-2xl font-bold text-green-600">€{expectedMonthlyIncome.toFixed(2)}</p>
-            <p className="text-xs text-green-600/70 mt-1">Recurring salary/income</p>
+        <div className="grid grid-cols-3 gap-2 md:gap-4">
+          <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-3 md:p-5 rounded-xl border border-green-200">
+            <p className="text-xs md:text-sm text-green-700 mb-0.5 md:mb-1">Expected</p>
+            <p className="text-base md:text-2xl font-bold text-green-600">€{expectedMonthlyIncome.toFixed(0)}</p>
+            <p className="hidden md:block text-xs text-green-600/70 mt-1">Recurring salary/income</p>
           </div>
-          <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-5 rounded-xl border border-green-200">
-            <p className="text-sm text-green-700 mb-1">Received This Month</p>
-            <p className="text-2xl font-bold text-green-600">€{monthlyIncome.toFixed(2)}</p>
-            <p className="text-xs text-green-600/70 mt-1">All income sources</p>
+          <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-3 md:p-5 rounded-xl border border-green-200">
+            <p className="text-xs md:text-sm text-green-700 mb-0.5 md:mb-1">Received</p>
+            <p className="text-base md:text-2xl font-bold text-green-600">€{monthlyIncome.toFixed(0)}</p>
+            <p className="hidden md:block text-xs text-green-600/70 mt-1">All income sources</p>
           </div>
-          <div className={`p-5 rounded-xl border ${
+          <div className={`p-3 md:p-5 rounded-xl border ${
             (monthlyIncome || expectedMonthlyIncome) - stats.grandTotal >= 0
               ? "bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200"
               : "bg-gradient-to-br from-red-50 to-orange-50 border-red-200"
           }`}>
-            <p className={`text-sm mb-1 ${
+            <p className={`text-xs md:text-sm mb-0.5 md:mb-1 ${
               (monthlyIncome || expectedMonthlyIncome) - stats.grandTotal >= 0
                 ? "text-blue-700"
                 : "text-red-700"
-            }`}>Net Balance</p>
-            <p className={`text-2xl font-bold ${
+            }`}>Balance</p>
+            <p className={`text-base md:text-2xl font-bold ${
               (monthlyIncome || expectedMonthlyIncome) - stats.grandTotal >= 0
                 ? "text-blue-600"
                 : "text-red-600"
             }`}>
-              €{((monthlyIncome || expectedMonthlyIncome) - stats.grandTotal).toFixed(2)}
+              €{((monthlyIncome || expectedMonthlyIncome) - stats.grandTotal).toFixed(0)}
             </p>
-            <p className={`text-xs mt-1 ${
+            <p className={`hidden md:block text-xs mt-1 ${
               (monthlyIncome || expectedMonthlyIncome) - stats.grandTotal >= 0
                 ? "text-blue-600/70"
                 : "text-red-600/70"
@@ -511,43 +624,43 @@ export default function DashboardOverview({
         </div>
       )}
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        <div className="bg-white p-5 rounded-xl border border-slate-200">
-          <p className="text-sm text-slate-500 mb-1">Monthly Total</p>
-          <p className="text-2xl font-bold text-slate-900">€{stats.total.toFixed(2)}</p>
-          <p className="text-xs text-slate-400 mt-1">{getDateRangeLabel()} (excl. projects)</p>
+      {/* Stats Cards - Mobile optimized */}
+      <div className="grid grid-cols-2 gap-2 md:gap-4 md:grid-cols-4 lg:grid-cols-5">
+        <div className="bg-white p-3 md:p-5 rounded-xl border border-slate-200">
+          <p className="text-xs md:text-sm text-slate-500 mb-0.5 md:mb-1">Total</p>
+          <p className="text-lg md:text-2xl font-bold text-slate-900">€{stats.total.toFixed(0)}</p>
+          <p className="hidden md:block text-xs text-slate-400 mt-1">{getDateRangeLabel()}</p>
         </div>
-        <div className="bg-white p-5 rounded-xl border border-slate-200">
-          <p className="text-sm text-slate-500 mb-1">Living Costs</p>
-          <p className="text-2xl font-bold text-[#0070f3]">€{stats.living.toFixed(2)}</p>
-          <div className="text-xs text-slate-400 mt-1 space-y-0.5">
+        <div className="bg-white p-3 md:p-5 rounded-xl border border-slate-200">
+          <p className="text-xs md:text-sm text-slate-500 mb-0.5 md:mb-1">Living</p>
+          <p className="text-lg md:text-2xl font-bold text-[#0070f3]">€{stats.living.toFixed(0)}</p>
+          <div className="hidden md:block text-xs text-slate-400 mt-1 space-y-0.5">
             <p>Fixed: €{stats.livingFixed.toFixed(2)}</p>
             <p>Variable: €{stats.livingVariable.toFixed(2)}</p>
           </div>
         </div>
-        <div className="bg-white p-5 rounded-xl border border-slate-200">
-          <p className="text-sm text-slate-500 mb-1">Lifestyle</p>
-          <p className="text-2xl font-bold text-purple-600">€{stats.lifestyle.toFixed(2)}</p>
-          <p className="text-xs text-slate-400 mt-1">Daily spending</p>
+        <div className="bg-white p-3 md:p-5 rounded-xl border border-slate-200">
+          <p className="text-xs md:text-sm text-slate-500 mb-0.5 md:mb-1">Lifestyle</p>
+          <p className="text-lg md:text-2xl font-bold text-purple-600">€{stats.lifestyle.toFixed(0)}</p>
+          <p className="hidden md:block text-xs text-slate-400 mt-1">Daily spending</p>
         </div>
-        <div className="bg-white p-5 rounded-xl border border-slate-200">
-          <p className="text-sm text-slate-500 mb-1">Projects</p>
-          <p className="text-2xl font-bold text-orange-600">€{stats.projects.toFixed(2)}</p>
-          <p className="text-xs text-slate-400 mt-1">{projects.length} project(s)</p>
+        <div className="bg-white p-3 md:p-5 rounded-xl border border-slate-200">
+          <p className="text-xs md:text-sm text-slate-500 mb-0.5 md:mb-1">Projects</p>
+          <p className="text-lg md:text-2xl font-bold text-orange-600">€{stats.projects.toFixed(0)}</p>
+          <p className="hidden md:block text-xs text-slate-400 mt-1">{projects.length} project(s)</p>
         </div>
-        <div className="bg-white p-5 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100">
-          <p className="text-sm text-slate-500 mb-1">Grand Total</p>
-          <p className="text-2xl font-bold text-slate-900">€{stats.grandTotal.toFixed(2)}</p>
-          <p className="text-xs text-slate-400 mt-1">Including projects</p>
+        <div className="col-span-2 md:col-span-1 bg-white p-3 md:p-5 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100">
+          <p className="text-xs md:text-sm text-slate-500 mb-0.5 md:mb-1">Grand Total</p>
+          <p className="text-lg md:text-2xl font-bold text-slate-900">€{stats.grandTotal.toFixed(0)}</p>
+          <p className="hidden md:block text-xs text-slate-400 mt-1">Including projects</p>
         </div>
       </div>
 
-      {/* Visualizations */}
+      {/* Visualizations - Mobile optimized */}
       {viewMode === "month" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-3">
           {/* Living Gauge */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6 flex items-center justify-center">
+          <div className="bg-white rounded-xl border border-slate-200 p-4 md:p-6 flex items-center justify-center">
             <LivingGauge
               current={stats.living}
               budget={livingBudget}
@@ -555,8 +668,8 @@ export default function DashboardOverview({
             />
           </div>
 
-          {/* Burn Chart - Lazy loaded to reduce initial bundle */}
-          <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-6">
+          {/* Burn Chart - Lazy loaded, hidden on mobile for performance */}
+          <div className="hidden md:block lg:col-span-2 bg-white rounded-xl border border-slate-200 p-4 md:p-6">
             <Suspense fallback={<ChartSkeleton />}>
               <BurnChart
                 currentMonthExpenses={expenses
@@ -573,76 +686,75 @@ export default function DashboardOverview({
         </div>
       )}
 
-      {/* Expenses List */}
+      {/* Expenses List - Mobile optimized */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-          <h3 className="font-semibold text-slate-900">
+        <div className="px-4 md:px-6 py-3 md:py-4 border-b border-slate-200 flex items-center justify-between">
+          <h3 className="font-semibold text-slate-900 text-sm md:text-base">
             Expenses ({filteredExpenses.length})
           </h3>
-          <span className="text-sm text-slate-500">{getDateRangeLabel()}</span>
+          <span className="text-xs md:text-sm text-slate-500">{getDateRangeLabel()}</span>
         </div>
 
         {filteredExpenses.length > 0 ? (
-          <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
+          <div className="divide-y divide-slate-100 max-h-[400px] md:max-h-[500px] overflow-y-auto scroll-touch">
             {filteredExpenses.map((expense) => (
               <div
                 key={expense.id}
-                className="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors group"
+                className="px-4 md:px-6 py-3 md:py-4 flex items-start md:items-center justify-between active:bg-slate-50 md:hover:bg-slate-50 transition-colors group tap-none"
               >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-medium text-slate-900 truncate">{expense.name}</p>
+                <div className="flex-1 min-w-0 mr-3">
+                  <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
+                    <p className="font-medium text-slate-900 text-sm md:text-base truncate max-w-[180px] md:max-w-none">{expense.name}</p>
                     {expense.projects && expense.projects.length > 0 && expense.projects.map((project) => (
-                      <span key={project.id} className="px-2 py-0.5 text-xs rounded-full bg-orange-100 text-orange-700">
+                      <span key={project.id} className="px-1.5 md:px-2 py-0.5 text-[10px] md:text-xs rounded-full bg-orange-100 text-orange-700">
                         {project.name}
                       </span>
                     ))}
                   </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-sm text-slate-500">
-                      {new Date(expense.date).toLocaleDateString("pt-PT")}
+                  <div className="flex items-center gap-1.5 md:gap-2 mt-0.5 md:mt-1 flex-wrap">
+                    <span className="text-xs md:text-sm text-slate-500">
+                      {new Date(expense.date).toLocaleDateString("pt-PT", { day: "numeric", month: "short" })}
                     </span>
-                    <span className="text-slate-300">•</span>
                     <span
-                      className={`text-sm font-medium ${
+                      className={`text-xs md:text-sm font-medium ${
                         expense.type === "SURVIVAL_FIXED" ? "text-blue-600" :
                         expense.type === "SURVIVAL_VARIABLE" ? "text-cyan-600" :
                         expense.type === "LIFESTYLE" ? "text-purple-600" :
                         "text-orange-600"
                       }`}
                     >
-                      {expense.type === "SURVIVAL_FIXED" ? "Living (Fixed)" :
-                       expense.type === "SURVIVAL_VARIABLE" ? "Living (Variable)" :
-                       expense.type === "LIFESTYLE" ? "Lifestyle" : "Project"}
+                      {expense.type === "SURVIVAL_FIXED" ? "Fixed" :
+                       expense.type === "SURVIVAL_VARIABLE" ? "Variable" :
+                       expense.type === "LIFESTYLE" ? "Life" : "Proj"}
                     </span>
-                    <span className="text-slate-300">•</span>
-                    <span className="text-sm text-slate-400">{expense.categoryName}</span>
+                    <span className="hidden md:inline text-slate-300">•</span>
+                    <span className="hidden md:inline text-sm text-slate-400">{expense.categoryName}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <p className="font-semibold text-slate-900 tabular-nums">
+                <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
+                  <p className="font-semibold text-slate-900 tabular-nums text-sm md:text-base">
                     €{expense.amountEur.toFixed(2)}
                   </p>
                   {confirmDeleteId === expense.id ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 md:gap-2">
                       <button
                         onClick={() => handleDelete(expense.id)}
                         disabled={deletingId === expense.id}
-                        className="px-3 py-1 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50"
+                        className="px-2 md:px-3 py-1.5 md:py-1 text-xs md:text-sm bg-red-500 text-white rounded-lg active:bg-red-600 md:hover:bg-red-600 disabled:opacity-50 tap-none"
                       >
-                        {deletingId === expense.id ? "..." : "Delete"}
+                        {deletingId === expense.id ? "..." : "Del"}
                       </button>
                       <button
                         onClick={() => setConfirmDeleteId(null)}
-                        className="px-3 py-1 text-sm border border-slate-300 rounded-lg hover:bg-slate-100"
+                        className="px-2 md:px-3 py-1.5 md:py-1 text-xs md:text-sm border border-slate-300 rounded-lg active:bg-slate-100 md:hover:bg-slate-100 tap-none"
                       >
-                        Cancel
+                        No
                       </button>
                     </div>
                   ) : (
                     <button
                       onClick={() => setConfirmDeleteId(expense.id)}
-                      className="opacity-0 group-hover:opacity-100 p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                      className="md:opacity-0 md:group-hover:opacity-100 p-2 text-slate-400 active:text-red-500 active:bg-red-50 md:hover:text-red-500 md:hover:bg-red-50 rounded-lg transition-all tap-none"
                       aria-label="Delete expense"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -655,8 +767,8 @@ export default function DashboardOverview({
             ))}
           </div>
         ) : (
-          <div className="px-6 py-12 text-center">
-            <p className="text-slate-500">No expenses found for this period.</p>
+          <div className="px-4 md:px-6 py-8 md:py-12 text-center">
+            <p className="text-slate-500 text-sm md:text-base">No expenses found for this period.</p>
           </div>
         )}
       </div>

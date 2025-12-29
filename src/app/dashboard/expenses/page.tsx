@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import AddExpenseModal from "@/components/add-expense-modal";
 import EditExpenseModal from "@/components/edit-expense-modal";
@@ -77,6 +77,13 @@ export default function ExpensesPage() {
   useEffect(() => {
     fetchData();
   }, [page, typeFilter, limit, selectedMonthFilter]);
+
+  // Listen for quick-add event from bottom nav
+  useEffect(() => {
+    const handleQuickAdd = () => setIsModalOpen(true);
+    window.addEventListener("openQuickAdd", handleQuickAdd);
+    return () => window.removeEventListener("openQuickAdd", handleQuickAdd);
+  }, []);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -232,12 +239,12 @@ export default function ExpensesPage() {
   const totalPages = limit === "all" ? 1 : Math.ceil(total / limit);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Expenses</h1>
-          <p className="text-slate-500 text-sm mt-1">
+          <h1 className="text-xl md:text-2xl font-bold text-slate-900">Expenses</h1>
+          <p className="text-slate-500 text-xs md:text-sm mt-0.5 md:mt-1">
             {selectedMonthFilter !== "all" ? (
               <>
                 {sortedExpenses.length} expenses in {
@@ -251,9 +258,10 @@ export default function ExpensesPage() {
             )}
           </p>
         </div>
+        {/* Desktop add button */}
         <button
           onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 bg-[#0070f3] text-white px-4 py-2 rounded-lg hover:bg-[#0060df] transition-colors"
+          className="hidden md:flex items-center gap-2 bg-[#0070f3] text-white px-4 py-2 rounded-lg hover:bg-[#0060df] transition-colors"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -262,16 +270,16 @@ export default function ExpensesPage() {
         </button>
       </div>
 
-      {/* Month Filter Bar */}
-      <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
-        <div className="flex flex-wrap gap-2 items-center">
+      {/* Month Filter Bar - Mobile optimized horizontal scroll */}
+      <div className="bg-white rounded-xl p-2 md:p-4 shadow-sm border border-slate-200">
+        <div className="flex gap-2 items-center overflow-x-auto scrollbar-hide pb-1">
           {/* All button */}
           <button
             onClick={() => setSelectedMonthFilter("all")}
-            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+            className={`flex-shrink-0 px-3 py-1.5 md:py-1.5 rounded-full text-sm font-medium transition-colors tap-none ${
               selectedMonthFilter === "all"
                 ? "bg-[#0070f3] text-white"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                : "bg-slate-100 text-slate-600 active:bg-slate-200 md:hover:bg-slate-200"
             }`}
           >
             All
@@ -287,12 +295,12 @@ export default function ExpensesPage() {
                 key={monthKey}
                 onClick={() => setSelectedMonthFilter(monthKey)}
                 disabled={isFuture}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                className={`flex-shrink-0 px-3 py-1.5 md:py-1.5 rounded-full text-sm font-medium transition-colors tap-none ${
                   isSelected
                     ? "bg-[#0070f3] text-white"
                     : isFuture
                     ? "bg-slate-50 text-slate-300 cursor-not-allowed"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    : "bg-slate-100 text-slate-600 active:bg-slate-200 md:hover:bg-slate-200"
                 }`}
               >
                 {month.slice(0, 3)}
@@ -365,45 +373,46 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
-        <div className="flex flex-wrap gap-4 items-center">
-          <div className="flex-1 min-w-[200px]">
+      {/* Filters - Mobile optimized */}
+      <div className="bg-white rounded-xl p-3 md:p-4 shadow-sm border border-slate-200">
+        <div className="flex flex-col md:flex-row gap-3 md:gap-4 md:items-center">
+          {/* Search */}
+          <div className="flex-1 min-w-0">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search expenses..."
-              className="w-full rounded-lg border border-slate-300 px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
+              className="w-full rounded-lg border border-slate-300 px-4 py-2.5 md:py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
             />
           </div>
-          <select
-            value={typeFilter}
-            onChange={(e) => {
-              setTypeFilter(e.target.value);
-              setPage(0);
-            }}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
-          >
-            <option value="">All Types</option>
-            <option value="SURVIVAL_FIXED">Living (Fixed)</option>
-            <option value="SURVIVAL_VARIABLE">Living (Variable)</option>
-            <option value="LIFESTYLE">Lifestyle</option>
-            <option value="PROJECT">Project</option>
-          </select>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-500">Sort:</span>
+          {/* Filter row */}
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+            <select
+              value={typeFilter}
+              onChange={(e) => {
+                setTypeFilter(e.target.value);
+                setPage(0);
+              }}
+              className="flex-shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
+            >
+              <option value="">All Types</option>
+              <option value="SURVIVAL_FIXED">Fixed</option>
+              <option value="SURVIVAL_VARIABLE">Variable</option>
+              <option value="LIFESTYLE">Lifestyle</option>
+              <option value="PROJECT">Project</option>
+            </select>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as "date" | "amount")}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
+              className="flex-shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
             >
-              <option value="date">Date</option>
-              <option value="amount">Amount</option>
+              <option value="date">By Date</option>
+              <option value="amount">By Amount</option>
             </select>
             <button
               onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
-              className="p-2 rounded-lg border border-slate-300 hover:bg-slate-50"
+              className="flex-shrink-0 p-2 rounded-lg border border-slate-300 active:bg-slate-50 md:hover:bg-slate-50 tap-none"
               title={sortOrder === "desc" ? "Newest/Highest first" : "Oldest/Lowest first"}
             >
               {sortOrder === "desc" ? (
@@ -416,23 +425,6 @@ export default function ExpensesPage() {
                 </svg>
               )}
             </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-500">Show:</span>
-            <select
-              value={limit === "all" ? "all" : limit.toString()}
-              onChange={(e) => {
-                const val = e.target.value;
-                setLimit(val === "all" ? "all" : parseInt(val));
-                setPage(0);
-              }}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0070f3]"
-            >
-              <option value="25">25</option>
-              <option value="50">50</option>
-              <option value="100">100</option>
-              <option value="all">All</option>
-            </select>
           </div>
         </div>
       </div>
@@ -447,20 +439,20 @@ export default function ExpensesPage() {
           No expenses found
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4 md:space-y-6">
           {groupedExpenses.map((group) => (
             <div key={group.monthKey} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               {/* Month Header */}
-              <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                <h3 className="font-semibold text-slate-900">{group.monthLabel}</h3>
-                <div className="flex items-center gap-4">
-                  <span className="text-sm text-slate-500">{group.expenses.length} expenses</span>
-                  <span className="font-semibold text-slate-900">€{group.total.toFixed(2)}</span>
+              <div className="px-3 md:px-4 py-2 md:py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <h3 className="font-semibold text-slate-900 text-sm md:text-base">{group.monthLabel}</h3>
+                <div className="flex items-center gap-2 md:gap-4">
+                  <span className="text-xs md:text-sm text-slate-500">{group.expenses.length}</span>
+                  <span className="font-semibold text-slate-900 text-sm md:text-base">€{group.total.toFixed(2)}</span>
                 </div>
               </div>
 
-              {/* Expenses Table */}
-              <table className="w-full">
+              {/* Desktop Table */}
+              <table className="hidden md:table w-full">
                 <thead className="bg-slate-50/50 border-b border-slate-100">
                   <tr>
                     <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 uppercase tracking-wider">Date</th>
@@ -529,6 +521,58 @@ export default function ExpensesPage() {
                   ))}
                 </tbody>
               </table>
+
+              {/* Mobile List */}
+              <div className="md:hidden divide-y divide-slate-100">
+                {group.expenses.map((expense) => (
+                  <div
+                    key={expense.id}
+                    className="px-3 py-3 flex items-start justify-between active:bg-slate-50 tap-none"
+                  >
+                    <div className="flex-1 min-w-0 mr-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="font-medium text-slate-900 text-sm truncate max-w-[160px]">{expense.name}</p>
+                        {expense.projects && expense.projects.length > 0 && expense.projects.map((project) => (
+                          <span key={project.id} className="px-1.5 py-0.5 text-[10px] rounded bg-amber-100 text-amber-700">
+                            {project.name}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span className="text-xs text-slate-500">
+                          {new Date(expense.date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${typeColors[expense.type]}`}>
+                          {expense.type === "SURVIVAL_FIXED" ? "Fixed" :
+                           expense.type === "SURVIVAL_VARIABLE" ? "Var" :
+                           expense.type === "LIFESTYLE" ? "Life" : "Proj"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <p className="font-semibold text-slate-900 text-sm tabular-nums">
+                        €{Number(expense.amount).toFixed(2)}
+                      </p>
+                      <button
+                        onClick={() => setEditingExpense(expense)}
+                        className="p-1.5 text-slate-400 active:text-slate-700 active:bg-slate-100 rounded tap-none"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => setDeleteId(expense.id)}
+                        className="p-1.5 text-slate-400 active:text-red-600 active:bg-red-50 rounded tap-none"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
