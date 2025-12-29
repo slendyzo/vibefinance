@@ -3,11 +3,28 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import DashboardOverview from "./overview-client";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ skipUsername?: string }>;
+}) {
   const session = await auth();
 
   if (!session?.user) {
     redirect("/auth/signin");
+  }
+
+  const params = await searchParams;
+
+  // Check if user needs to set up username (email-only users)
+  // Only prompt once - skip if they already dismissed it this session
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { username: true },
+  });
+
+  if (!user?.username && params.skipUsername !== "true") {
+    redirect("/auth/setup-username");
   }
 
   // Get user's workspace first (needed for all other queries)

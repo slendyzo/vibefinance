@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 
 export default function SignInPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -17,13 +17,13 @@ export default function SignInPage() {
     setError("");
 
     const result = await signIn("credentials", {
-      email,
+      identifier,
       password,
       redirect: false,
     });
 
     if (result?.error) {
-      setError("Invalid email or password");
+      setError("Invalid username/email or password");
       setIsLoading(false);
     } else {
       router.push("/dashboard");
@@ -75,7 +75,7 @@ export default function SignInPage() {
           </div>
           <div className="relative flex justify-center text-sm">
             <span className="px-2 bg-white dark:bg-slate-950 text-slate-500">
-              Or continue with email
+              Or continue with credentials
             </span>
           </div>
         </div>
@@ -90,19 +90,19 @@ export default function SignInPage() {
 
           <div>
             <label
-              htmlFor="email"
+              htmlFor="identifier"
               className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
             >
-              Email
+              Username or Email
             </label>
             <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              id="identifier"
+              type="text"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
               required
               className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0070f3] focus:border-transparent"
-              placeholder="you@example.com"
+              placeholder="johndoe or you@example.com"
             />
           </div>
 
